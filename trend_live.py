@@ -11,7 +11,9 @@ data. The account holds positions and equity, so the strategies cannot share one
     python trend_live.py --offline    # dry run with no broker ($100k simulated account)
     python trend_live.py --reset-kill-switch
 
-Differences from the backtest: paper cash earns no T-bill interest, and whole shares leave a little cash.
+Differences from the backtest: paper cash earns no T-bill interest, whole shares leave a little cash, and
+the target is 98% of equity, not 100%: the order is sized on yesterday's close but fills at today's close, so a
+fully invested order could exceed cash on a gap up and be rejected (the strategy would then never enter).
 Same drawdown kill switch as live.py (hard stop, manual reset), so rule 4 holds here too. Logs go to
 logs/trend/, state to state/trend_state.json.
 """
@@ -37,6 +39,8 @@ STATE_FILE = ROOT / "state" / "trend_state.json"
 LOG_DIR = ROOT / "logs" / "trend"
 KEY_ENV, SECRET_ENV = "ALPACA_TREND_API_KEY", "ALPACA_TREND_SECRET_KEY"
 
+TARGET_WEIGHT = 0.98  # cash buffer for the close-to-close price move between sizing and fill
+
 # Kill switch only: the trend rule itself is the sell-off rule, and there is one name at 100%.
 LIMITS = RiskLimits(max_position=1.0, group_caps=(), selloff_gross=1.0)
 
@@ -53,14 +57,14 @@ def plan_trend_orders(
     held = positions.get(BENCHMARK, 0.0) > 0
     if want_on == held:
         return []
-    target = pd.Series({BENCHMARK: 1.0 if want_on else 0.0})
+    target = pd.Series({BENCHMARK: TARGET_WEIGHT if want_on else 0.0})
     return live.plan_orders(target, positions, pd.Series({BENCHMARK: price}), equity, date_tag)
 
 
 def load_state() -> dict:
     if STATE_FILE.exists():
         return json.loads(STATE_FILE.read_text())
-    return {"last_kill_check": None, "kill": None, "logged_orders": []}
+    return {"last_kill_check": None, "last_submit_day": None, "kill": None, "logged_orders": []}
 
 
 def save_state(state: dict) -> None:
@@ -118,9 +122,13 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
                 log_event("killed", message="kill switch active, holding cash until manual reset")
             return
 
+        if state.get("last_submit_day") == today.date().isoformat():
+            log_event("no_orders", message="already submitted today; the order fills at the close")
+            return
         orders = plan_trend_orders(want_on, positions, float(bench.iloc[-1]), equity, tag)
         log_event("signal", signal_day=last_bar.date(), invested=want_on, held=positions.get(BENCHMARK, 0.0) > 0)
-        live.submit_all(broker, orders, submit)
+        if live.submit_all(broker, orders, submit) and submit and orders:
+            state["last_submit_day"] = today.date().isoformat()
     except Exception as e:
         log_event("error", where="run", error=repr(e))
         log_event("alert", message=f"run failed: {e!r}")

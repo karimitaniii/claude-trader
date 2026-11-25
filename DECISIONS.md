@@ -70,3 +70,6 @@ original -3 pt figure, which included them.
   account would make each runner trade the other's positions and mix the kill-switch equity). Trend orders only on an
   on/off change, so whole-share drift never causes daily trades. Live paper cash earns no T-bill interest, unlike the
   backtest. Open: `compare.py` still covers momentum only; add a trend shadow comparison once there is live data.
+- Trend runner sizing (2026-11-25): target 98% of equity, not 100%, because the order is sized on yesterday's close and
+  fills at today's; a full-size order can exceed cash after a gap up and be rejected. Costs about 2% of cash drag.
+  `live.py` (momentum) has the same sizing pattern at up to 100% gross; not changed here.

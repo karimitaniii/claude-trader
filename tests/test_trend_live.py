@@ -40,7 +40,8 @@ def test_plan_orders_only_on_state_change():
     assert trend_live.plan_trend_orders(True, {"QQQ": 100.0}, 500.0, 50_000.0, "20261124") == []
     assert trend_live.plan_trend_orders(False, {}, 500.0, 50_000.0, "20261124") == []
     buy = trend_live.plan_trend_orders(True, {}, 500.0, 50_000.0, "20261124")
-    assert [(o.symbol, o.side, o.qty) for o in buy] == [("QQQ", "buy", 100)]
+    assert [(o.symbol, o.side, o.qty) for o in buy] == [("QQQ", "buy", 98)]   # 98% target: cash buffer
+    assert buy[0].qty * 500.0 < 50_000.0
     sell = trend_live.plan_trend_orders(False, {"QQQ": 100.0}, 500.0, 50_000.0, "20261124")
     assert [(o.symbol, o.side, o.qty) for o in sell] == [("QQQ", "sell", 100)]
 
@@ -93,3 +94,21 @@ def test_broker_reads_named_env_vars(monkeypatch):
     monkeypatch.delenv("ALPACA_TREND_SECRET_KEY", raising=False)
     with pytest.raises(RuntimeError, match="ALPACA_TREND_API_KEY"):
         broker.AlpacaPaperBroker("ALPACA_TREND_API_KEY", "ALPACA_TREND_SECRET_KEY")
+
+
+def test_second_run_same_day_does_not_resubmit(monkeypatch):
+    fake_bench(monkeypatch)
+    b = PaperSimBroker()   # the sim never fills, like an order still pending until the close
+    trend_live.run(b, submit=True, now=WHEN)
+    trend_live.run(b, submit=True, now=WHEN)
+    assert len(b.submitted) == 1
+    assert not any(e["kind"] == "error" for e in events())
+
+
+def test_refuses_to_share_the_momentum_account(monkeypatch):
+    monkeypatch.setenv("ALPACA_API_KEY", "same-key")
+    monkeypatch.setenv("ALPACA_TREND_API_KEY", "same-key")
+    monkeypatch.setattr("sys.argv", ["trend_live.py"])
+    with pytest.raises(SystemExit) as exc:
+        trend_live.main()
+    assert exc.value.code == 2
