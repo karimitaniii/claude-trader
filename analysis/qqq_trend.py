@@ -20,13 +20,18 @@ TRADING_DAYS = 252
 
 
 def trend_returns(bench: pd.Series, rf: pd.Series, window: int = 200) -> tuple[pd.Series, int]:
-    """Daily returns of the QQQ-above-SMA rule and the number of switches."""
+    """Daily returns of the QQQ-above-SMA rule and the number of switches.
+
+    Timing (project rule 1): the signal from day t's close is an order for day t+1's close, so the position
+    only earns returns from day t+2 on: `held` is the signal shifted by 2 bars.
+    """
     on = trend_ok(bench, window).astype(float)
-    held = on.shift(1).fillna(1.0)               # decided at yesterday's close, held through today
+    target = on.shift(1).fillna(1.0)             # decided at close t-1, filled at close t
+    held = target.shift(1).fillna(1.0)           # position carried through day t's return
+    trades = target.diff().abs().fillna(0.0)
     r = held * bench.pct_change() + (1 - held) * align_rf(rf, bench.index)
-    switches = held.diff().abs().fillna(0.0)
-    r = r - switches * COST                      # one-way cost on the whole portfolio at each switch
-    return r, int(switches.sum())
+    r = r - trades * COST                        # one-way cost on the whole portfolio at each switch
+    return r, int(trades.sum())
 
 
 def main() -> None:

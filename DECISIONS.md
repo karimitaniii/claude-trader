@@ -58,18 +58,21 @@ original -3 pt figure, which included them.
   biased against the wider universe; non-tech names are one uncapped "non_tech" risk group. Decision: stay tech-like.
 
 - QQQ trend baseline (2026-11-25, `analysis/qqq_trend.py`, 2014-02..2026-11, costs on, cash earns T-bill): hold QQQ
-  above its 200d average, else T-bills. 200d (the a-priori window, same as the risk layer): CAGR 0.138, excess
-  Sharpe 0.76, MaxDD -0.23, 2022 -0.16, $100k -> $520k, 61 switches; alpha vs QQQ +2.8%/yr t=1.03, beta 0.56.
-  vs momentum no-risk: CAGR 0.236, Sharpe 0.71, MaxDD -0.56, $1.51M. 150d looks better (Sharpe 0.89, MaxDD -0.22,
-  alpha t=1.90) and 100d worse (0.50), but three windows were tried and the best one picked in-sample, so treat
-  150d as a hint, not a result. Read: trend-following QQQ matches momentum's risk-adjusted return with about
-  half the drawdown and ~40% lower beta, but earns much less in $ terms. Momentum's extra $ is leverage-like risk.
-
+  above its 200d average, else T-bills; the signal from day t's close trades at t+1's close (position earns from
+  t+2). CORRECTED: the first version held the signal shifted by 1 bar (traded at the same close that produced
+  it, a look-ahead) and flattered every row below; the timing test missed it because its crash day was followed by
+  a flat price. 200d (the a-priori window, same as the risk layer): CAGR 0.133, excess Sharpe 0.72, MaxDD -0.26,
+  2022 -0.19, $100k -> $493k, 61 switches; alpha vs QQQ +2.0%/yr t=0.74, beta 0.59. (Wrong version: Sharpe 0.76,
+  MaxDD -0.23, $520k, alpha t=1.03.) vs momentum no-risk: CAGR 0.236, Sharpe 0.71, MaxDD -0.56, $1.51M. Other windows
+  (three tried, so selection bias): 150d Sharpe 0.75, MaxDD -0.25, alpha t=1.04; 100d Sharpe 0.54. The earlier "150d
+  looks like a hint" (Sharpe 0.89, t=1.90) was mostly the timing bug. Read: trend-following QQQ roughly matches
+  momentum's risk-adjusted return with about half the drawdown and ~40% lower beta, but earns much less in $ terms,
+  and neither shows significant alpha over QQQ buy-and-hold (QQQ Sharpe 0.78 is still the best of all).
 - Paper trade both strategies (2026-11-25): momentum (`live.py`) and the QQQ 200d trend baseline (`trend_live.py`),
   each in its own Alpaca paper account because an account holds one set of positions and one equity (a shared
   account would make each runner trade the other's positions and mix the kill-switch equity). Trend orders only on an
   on/off change, so whole-share drift never causes daily trades. Live paper cash earns no T-bill interest, unlike the
-  backtest. Open: `compare.py` still covers momentum only; add a trend shadow comparison once there is live data.
+  backtest. `compare.py` covers both: the trend shadow mirrors the live runner (98% target, trades only on on/off changes, no cash interest), not the research backtest.
 - Trend runner sizing (2026-11-25): target 98% of equity, not 100%, because the order is sized on yesterday's close and
   fills at today's; a full-size order can exceed cash after a gap up and be rejected. Costs about 2% of cash drag.
   `live.py` (momentum) has the same sizing pattern at up to 100% gross; not changed here.

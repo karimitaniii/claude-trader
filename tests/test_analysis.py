@@ -1,6 +1,7 @@
 """Unit tests for the analysis helpers (no network, no vectorbt portfolios)."""
 import numpy as np
 import pandas as pd
+import pytest
 
 from analysis.earnings import reaction_mask
 from analysis.edge_test import block_indices, newey_west_ols
@@ -63,10 +64,13 @@ def test_trend_returns_no_lookahead_and_costs():
 
     idx = pd.bdate_range("2023-01-02", periods=60)
     px = pd.Series(100.0, index=idx)
-    px.iloc[40:] = 50.0                      # crash on day 40: stays below the 30d average through day 59
+    px.iloc[40:] = 50.0                      # day 40 closes below the 30d average and stays below through day 59
+    px.iloc[41:] = 40.0                      # a further -20% on day 41
     rf = pd.Series(0.0, index=idx)
     r, switches = trend_returns(px, rf, window=30)
-    assert r.iloc[40] == px.pct_change().iloc[40]   # still fully invested on the crash day (decided at close of 39)
+    ret = px.pct_change()
+    assert r.iloc[40] == ret.iloc[40]                 # fully invested through the crash day
+    # the signal fires at close 40, the sell is filled at close 41, so day 41's -20% is still taken in full
+    assert r.iloc[41] == pytest.approx(ret.iloc[41] - COST)
     assert switches == 1
-    assert r.iloc[41] == -COST                       # exit trade on day 41 pays one-way cost, then flat in cash
-    assert (r.iloc[42:] == 0).all()
+    assert (r.iloc[42:] == 0).all()                   # in cash afterwards
