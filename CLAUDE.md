@@ -97,6 +97,9 @@ github.com/karimitaniii/claude-trader (private, `main`). 49 tests pass.
 Key results (costs on, PIT universe, 2014+): momentum CAGR 0.244, excess Sharpe 0.72, MaxDD -0.57;
 QQQ excess Sharpe 0.79; equal-weight universe about as good as momentum. Walk-forward OOS 0.75.
 With all risk defaults + hard-stop kill switch: CAGR 0.14, MaxDD -0.27 (one kill, 2021-05, then cash).
+That -0.27 is not a realistic expectation: it sits in cash after 2021 because nobody resets it. With all
+risk defaults and the kill switch re-armed after review (proxy: auto re-arm, 21-126d cooldown, QQQ above
+200d): CAGR ~0.20, excess Sharpe ~0.71-0.73, MaxDD -0.45 to -0.48, 4-5 kills since 2014.
 
 Decisions and why:
 - Free hybrid PIT data (n100tickers + yfinance), tech-like NDX members: no paid data; accept ~10% missing.
@@ -116,8 +119,9 @@ Decisions and why:
   analysis not in repo). Held names' earnings-reaction days: 1.6% of held days, mean +0.62% vs +0.11%
   normal, ~8% of portfolio variance. Exit over earnings: CAGR 0.201 vs 0.234, excess Sharpe 0.64 vs 0.70,
   MaxDD -0.55 vs -0.57; half size in between. Momentum names tend to gap up on earnings.
-- The hard-stop kill switch dominates risk-on backtest numbers (whichever date it fires); consider
-  backtesting a reviewed-reset policy.
+- Kill switch (2026-11-25): keep the live hard stop with manual reset. Re-arm backtests: vs no kill switch
+  (CAGR 0.207, Sharpe 0.70, MaxDD -0.49) it adds little (Sharpe +0.01-0.03, MaxDD a few pts); cooldown
+  length barely matters; 35% threshold ~= no kill switch. Its value is forcing a human review, not returns.
 - Market-on-close whole-share orders, monthly rebalance from previous month-end signal (matches backtest).
 - yfinance known-dead tickers skipped (`KNOWN_NO_DATA`) to keep daily runs quiet.
 
