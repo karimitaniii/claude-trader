@@ -12,7 +12,7 @@ Current files:
 - `data.py`      download and cache adjusted daily closes (yfinance -> `data_cache/close_<hash>.csv`, keyed by
                  ticker set; empty columns retried) and the 13w T-bill rate (`data_cache/irx.csv`)
 - `universe.py`  point-in-time Nasdaq-100 membership (jmccarrell/n100tickers, pinned commit) filtered to
-                 tech-like names via `universe_data/ndx_sector_map.csv`; `load_universe("pit"|"static")`
+                 tech-like names via `universe_data/ndx_sector_map.csv`; `load_universe("pit"|"all"|"static")` ("all" = every sector, comparison only)
 - `signals.py`   12-1 momentum -> monthly equal-weight top-N target weights (shifted 1 bar), only names
                  eligible on the signal date; `equal_weights` = same-universe no-selection benchmark
 - `backtest.py`  vectorbt backtest vs equal-weight universe and QQQ, with fees and slippage,
@@ -30,6 +30,10 @@ Current files:
                  live trade, fill slippage vs close, failed orders and alerts
 - `walkforward.py` rolling 3y-train / 1y-test walk-forward with a 48-combo parameter sweep, OOS report
                  (`python walkforward.py pit|static`)
+- `report.py`    visual report: $100k growth vs QQQ, drawdowns, annual returns, start-date sensitivity,
+                 holdings by group, today's picks -> `report/*.png` (`python report.py`)
+- `analysis/`    reproducible research scripts (`python -m analysis.edge_test|vol_scaling|earnings`);
+                 research only, nothing in live trading imports them
 - `tests/`       pytest: no look-ahead, weights, excess Sharpe, fold/selection/stitching logic
 
 ## Commands
@@ -92,7 +96,7 @@ Current files:
 ## Status (2026-11-25)
 
 Steps 1-5 done; step 6 tooling done (`compare.py`), no paper orders submitted yet. Repo:
-github.com/karimitaniii/claude-trader (private, `main`). 49 tests pass.
+github.com/karimitaniii/claude-trader (private, `main`). 55 tests pass.
 
 Key results (costs on, PIT universe, 2014+): momentum excess Sharpe 0.72 vs QQQ 0.79, MaxDD -0.57; no
 evidence of edge beyond leveraged QQQ (alpha t=0.34). Full numbers and reasoning: `DECISIONS.md`.

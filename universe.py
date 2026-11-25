@@ -103,13 +103,16 @@ def symbol_groups(symbols, sector_map: pd.DataFrame | None = None) -> pd.Series:
     )
 
 
-def tech_intervals(intervals: pd.DataFrame, sector_map: pd.DataFrame) -> pd.DataFrame:
-    """Keep tech-like members and add the price symbol. Fails loudly on unclassified tickers."""
+def tech_intervals(intervals: pd.DataFrame, sector_map: pd.DataFrame, tech_only: bool = True) -> pd.DataFrame:
+    """Keep tech-like members (all members if `tech_only` is False) and add the price symbol.
+
+    Fails loudly on unclassified tickers.
+    """
     unknown = set(intervals["ticker"]) - set(sector_map["ticker"])
     if unknown:
         raise ValueError(f"tickers missing from {SECTOR_MAP_FILE.name}, classify them: {sorted(unknown)}")
     tech = set(sector_map.loc[sector_map["tech_like"] == 1, "ticker"])
-    out = intervals[intervals["ticker"].isin(tech)].copy()
+    out = (intervals[intervals["ticker"].isin(tech)] if tech_only else intervals).copy()
     out["symbol"] = out["ticker"].map(lambda t: PRICE_ALIASES.get(t, t))
     return out.reset_index(drop=True)
 
@@ -130,15 +133,17 @@ def load_universe(kind: str = "pit", refresh: bool = False) -> tuple[pd.DataFram
     """Return (forward-filled closes, eligibility mask or None).
 
     kind="pit":    point-in-time Nasdaq-100 tech-like members (mask = membership).
+    kind="all":    point-in-time Nasdaq-100 members of every sector (comparison only; the sector map's
+                   non-tech names are grouped as "non_tech" for risk purposes).
     kind="static": the old hand-picked 24-name list, always eligible (survivorship-biased).
     """
     from data import UNIVERSE, load_prices
 
     if kind == "static":
         return load_prices(UNIVERSE, refresh=refresh)[UNIVERSE].ffill(), None
-    if kind != "pit":
+    if kind not in ("pit", "all"):
         raise ValueError(f"unknown universe {kind!r}")
-    tech = tech_intervals(load_membership(), load_sector_map())
+    tech = tech_intervals(load_membership(), load_sector_map(), tech_only=(kind == "pit"))
     close = load_prices(sorted(tech["symbol"].unique()), refresh=refresh)
     close = close.loc[:, close.notna().any()]  # drop names yfinance has no data for
     members = membership_matrix(tech[tech["symbol"].isin(close.columns)], close.index)
