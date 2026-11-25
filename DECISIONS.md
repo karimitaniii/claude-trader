@@ -56,3 +56,11 @@ original -3 pt figure, which included them.
   (about 39% of equity on average), so the tech filter is not what drives picks, but those names did not pay.
   Caveat: 15.6% of full-NDX member-days have no price (9.9% tech-like), so the comparison is more survivorship-
   biased against the wider universe; non-tech names are one uncapped "non_tech" risk group. Decision: stay tech-like.
+
+- QQQ trend baseline (2026-11-25, `analysis/qqq_trend.py`, 2014-02..2026-11, costs on, cash earns T-bill): hold QQQ
+  above its 200d average, else T-bills. 200d (the a-priori window, same as the risk layer): CAGR 0.138, excess
+  Sharpe 0.76, MaxDD -0.23, 2022 -0.16, $100k -> $520k, 61 switches; alpha vs QQQ +2.8%/yr t=1.03, beta 0.56.
+  vs momentum no-risk: CAGR 0.236, Sharpe 0.71, MaxDD -0.56, $1.51M. 150d looks better (Sharpe 0.89, MaxDD -0.22,
+  alpha t=1.90) and 100d worse (0.50), but three windows were tried and the best one picked in-sample, so treat
+  150d as a hint, not a result. Read: trend-following QQQ matches momentum's risk-adjusted return with about
+  half the drawdown and ~40% lower beta, but earns much less in $ terms. Momentum's extra $ is leverage-like risk.
