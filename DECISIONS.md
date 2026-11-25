@@ -85,7 +85,7 @@ original -3 pt figure, which included them.
   4 and 6 thresholds (sensitivity only) give 0.05 and 0.59: no setting beats the plain 200d trend, and tuning the
   threshold upward would just be an in-sample pick. The classic 4-5 count was set for a calmer index/era, so the
   threshold does not transfer. Not adopted, not worth integrating into `risk.py`.
-  Information content (QQQ forward 21d return by state): neither signal predicts returns. Below the 200d average the
-  mean forward return is +2.1% vs +1.5% above it (no edge), but forward volatility is 36% vs 18%; dist >= 5 gives
-  1.5% vs 1.8% with vol 24% vs 15%. So the 200d trend works as a volatility-regime indicator, not a return
+  Information content (QQQ forward 21d return by state; descriptive only, overlapping windows, no significance
+  test): no clear return difference between states. Below the 200d average the mean forward return is +2.1% vs
+  +1.5% above it, but forward volatility is 36% vs 18%; dist >= 5 gives 1.5% vs 1.8% with vol 24% vs 15%. So the 200d trend works as a volatility-regime indicator, not a return
   forecast, which is consistent with the vol-scaling result (lower drawdown, Sharpe roughly unchanged).

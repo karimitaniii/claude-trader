@@ -68,6 +68,10 @@ def main() -> None:
     runs = build_runs()
     bench = runs.bench
     vol = completed_bars(load_volume())
+    if vol.index[-1] < bench.index[-1]:  # a stale cache would silently count the missing days as non-distribution
+        vol = completed_bars(load_volume(refresh=True))
+        if vol.index[-1] < bench.index[-1]:
+            raise RuntimeError(f"volume ends {vol.index[-1].date()}, prices end {bench.index[-1].date()}")
     count = distribution_count(bench, vol)
     trend = trend_ok(bench, 200)
     dist_ok = count < THRESHOLD
@@ -100,7 +104,7 @@ def main() -> None:
 
     states = {"below 200d": ~trend, "dist >= 5": ~dist_ok}
     sub = slice(runs.start, None)
-    print("\nQQQ forward 21-day return by signal state (information content, no trading lag):")
+    print("\nQQQ forward 21-day return by signal state (descriptive: overlapping windows, no significance test):")
     print(forward_table(bench.loc[sub], {k: v.loc[sub] for k, v in states.items()}).round(3).to_string())
     both = (~trend) & (~dist_ok)
     print(f"\nWarning episodes: dist>=5 starts {int(((~dist_ok) & dist_ok.shift(1, fill_value=True)).loc[sub].sum())}, "
