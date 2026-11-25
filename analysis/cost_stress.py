@@ -20,7 +20,9 @@ SLIPPAGE_BPS = (5, 10, 20, 40)
 
 
 def turnover_per_year(pf, years: float) -> float:
-    """One-way traded notional per year as a multiple of average equity."""
+    """Traded notional (buys + sells, so about twice the one-way turnover) per year, as a multiple of average equity.
+
+    Costs are charged on every order, so cost drag per year is roughly this number times the per-trade cost."""
     orders = pf.orders.records_readable
     return float((orders["Size"] * orders["Price"]).sum() / pf.value().mean() / years)
 
@@ -44,9 +46,9 @@ def main() -> None:
             m = metrics(r, runs.rf)
             rows[(name, bps)] = {"CAGR": m["CAGR"], "Sharpe (excess)": m["Sharpe (excess)"],
                                  "Max drawdown": m["Max drawdown"], "$100k becomes": (1 + r).prod() * INIT_CASH}
-        rows[("Momentum, no risk layer", bps)]["turnover x/yr"] = turnover_per_year(pf, years)
-        rows[("Momentum + risk (re-armed)", bps)]["turnover x/yr"] = turnover_per_year(pf_risk, years)
-        rows[("QQQ trend 200d", bps)]["turnover x/yr"] = switches / years
+        rows[("Momentum, no risk layer", bps)]["traded notional x/yr"] = turnover_per_year(pf, years)
+        rows[("Momentum + risk (re-armed)", bps)]["traded notional x/yr"] = turnover_per_year(pf_risk, years)
+        rows[("QQQ trend 200d", bps)]["traded notional x/yr"] = switches / years
     qqq = runs.returns[BENCHMARK]
     m = metrics(qqq, runs.rf)
     print(f"Sample {runs.start.date()}..{runs.returns.index[-1].date()}; fees 5 bps always; slippage varied; "
@@ -55,7 +57,7 @@ def main() -> None:
     table = pd.DataFrame(rows).T
     table.index.names = ["strategy", "slippage bps"]
     print(table.round(3).to_string())
-    print("\n(trend turnover column = switches per year, not notional)")
+    print("\n(trend row of the last column = switches per year, each a full buy or sell, not notional multiples)")
 
 
 if __name__ == "__main__":

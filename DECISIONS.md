@@ -106,7 +106,7 @@ original -3 pt figure, which included them.
 
 - Cost stress (2026-11-25, `analysis/cost_stress.py`, fees 5 bps + slippage 5/10/20/40 bps, 2014-02..2026-11): costs
   do not change the picture. Momentum no-risk CAGR 0.236 -> 0.232 -> 0.225 -> 0.210, excess Sharpe 0.71 -> 0.65,
-  $1.51M -> $1.14M (QQQ $818k); about 6.4x one-way turnover per year, so each +10 bps of slippage costs ~0.6 pts/yr.
+  $1.51M -> $1.14M (QQQ $818k); traded notional (buys + sells) of ~6.4x average equity per year (~3.2x one-way), so each +10 bps of slippage costs ~0.6 pts/yr.
   QQQ trend 200d: CAGR 0.133 -> 0.114, Sharpe 0.72 -> 0.61, ~4.8 switches/yr. No strategy reaches QQQ's Sharpe (0.78)
   at any cost level. The re-armed risk-layer row is not monotone (CAGR 0.205 at 5 bps, 0.207 at 10 bps): kill-switch
   timing shifts with equity, so read its cost sensitivity loosely. Real slippage is unknown until paper fills
