@@ -26,14 +26,16 @@ PERIODS = {
 }
 
 
-def simulate(close: pd.DataFrame, weights: pd.DataFrame) -> vbt.Portfolio:
-    """Trade target weights (NaN = no order) at the close, with fees and slippage always on."""
+def simulate(close: pd.DataFrame, weights: pd.DataFrame, fees: float = FEES, slippage: float = SLIPPAGE) -> vbt.Portfolio:
+    """Trade target weights (NaN = no order) at the close, with fees and slippage always on.
+
+    `fees` / `slippage` can be raised for cost stress tests; they default to the project assumptions."""
     return vbt.Portfolio.from_orders(
         close=close,
         size=weights,
         size_type="targetpercent",
-        fees=FEES,
-        slippage=SLIPPAGE,
+        fees=fees,
+        slippage=slippage,
         init_cash=INIT_CASH,
         cash_sharing=True,
         group_by=True,

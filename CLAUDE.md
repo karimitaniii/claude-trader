@@ -36,7 +36,7 @@ Current files:
                  (`python walkforward.py pit|static`)
 - `report.py`    visual report: $100k growth vs QQQ, drawdowns, annual returns, start-date sensitivity,
                  holdings by group, today's picks -> `report/*.png` (`python report.py`)
-- `analysis/`    reproducible research scripts (`python -m analysis.edge_test|vol_scaling|earnings|universe_compare|qqq_trend|distribution`);
+- `analysis/`    reproducible research scripts (`python -m analysis.edge_test|vol_scaling|earnings|universe_compare|qqq_trend|distribution|cost_stress`);
                  research only, nothing in live trading imports them
 - `tests/`       pytest: no look-ahead, weights, excess Sharpe, fold/selection/stitching logic
 
@@ -102,7 +102,7 @@ Current files:
 ## Status (2026-11-25)
 
 Steps 1-5 done; step 6 tooling done (`compare.py`), no paper orders submitted yet. Repo:
-github.com/karimitaniii/claude-trader (private, `main`). 71 tests pass.
+github.com/karimitaniii/claude-trader (private, `main`). 73 tests pass.
 
 Key results (costs on, PIT universe, 2014+): momentum excess Sharpe 0.72 vs QQQ 0.79, MaxDD -0.57; no
 evidence of edge beyond leveraged QQQ (alpha t=0.34). Full numbers and reasoning: `DECISIONS.md`.
@@ -126,5 +126,7 @@ Next:
 ## Style
 
 - Python, type hints, small pure functions; pandas/numpy conventions already used in the repo.
-- Add tests (pytest) for anything touching signals, weights, or risk limits.
+- Add tests (pytest) for anything touching signals, weights, or risk limits; new signal/position paths also get a
+  shock test in `tests/test_lookahead.py`. Before a new experiment follow the checklist at the top of `DECISIONS.md`
+  and add it to the variants ledger there.
 - Explain trade-offs briefly; flag assumptions rather than silently choosing.
