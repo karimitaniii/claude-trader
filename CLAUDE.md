@@ -26,6 +26,9 @@ Current files:
                  monthly targets from previous month-end close -> risk layer -> whole-share orders.
                  Dry run by default; `--submit` sends to paper. Logs: `logs/YYYY-MM-DD.jsonl`,
                  state: `state/live_state.json` (`--offline` uses separate files)
+- `trend_live.py` second paper strategy for live comparison: hold QQQ while above its 200d average, else cash.
+                 Needs its OWN Alpaca paper account (`ALPACA_TREND_API_KEY/SECRET_KEY`); same kill switch;
+                 logs in `logs/trend/`, state in `state/trend_state.json`. Dry run by default, `--submit` sends
 - `compare.py`   step 6: live paper equity vs a shadow backtest of the same config from the first
                  live trade, fill slippage vs close, failed orders and alerts
 - `walkforward.py` rolling 3y-train / 1y-test walk-forward with a 48-combo parameter sweep, OOS report
@@ -40,6 +43,8 @@ Current files:
 
 - Setup: fresh venv (Python 3.10-3.11; vectorbt is picky about numpy/numba), `pip install -r requirements.txt`
 - Run backtest: `python backtest.py`
+- QQQ-trend paper strategy (second paper account): `export ALPACA_TREND_API_KEY=... ALPACA_TREND_SECRET_KEY=...`,
+  then `python trend_live.py` / `--submit`, daily, same time window as `live.py`
 - Paper trading: `export ALPACA_API_KEY=... ALPACA_SECRET_KEY=...` (paper keys), then
   `python live.py` (dry run) / `python live.py --submit`, once per trading day, before ~15:35 ET.
   After a kill-switch alert: review, then `python live.py --reset-kill-switch`.
@@ -96,7 +101,7 @@ Current files:
 ## Status (2026-11-25)
 
 Steps 1-5 done; step 6 tooling done (`compare.py`), no paper orders submitted yet. Repo:
-github.com/karimitaniii/claude-trader (private, `main`). 55 tests pass.
+github.com/karimitaniii/claude-trader (private, `main`). 65 tests pass.
 
 Key results (costs on, PIT universe, 2014+): momentum excess Sharpe 0.72 vs QQQ 0.79, MaxDD -0.57; no
 evidence of edge beyond leveraged QQQ (alpha t=0.34). Full numbers and reasoning: `DECISIONS.md`.
