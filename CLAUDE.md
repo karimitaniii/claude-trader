@@ -89,6 +89,29 @@ Current files:
    improves out-of-sample results over the baseline. Log LLM outputs live to avoid
    training-data look-ahead bias in evaluation.
 
+## Status (2026-11-25)
+
+Steps 1-5 done; step 6 tooling done (`compare.py`), no paper orders submitted yet. Repo:
+github.com/karimitaniii/claude-trader (private, `main`). 49 tests pass.
+
+Key results (costs on, PIT universe, 2014+): momentum CAGR 0.244, excess Sharpe 0.72, MaxDD -0.57;
+QQQ excess Sharpe 0.79; equal-weight universe about as good as momentum. Walk-forward OOS 0.75.
+With all risk defaults + hard-stop kill switch: CAGR 0.14, MaxDD -0.27 (one kill, 2021-05, then cash).
+
+Decisions and why:
+- Free hybrid PIT data (n100tickers + yfinance), tech-like NDX members: no paid data; accept ~10% missing.
+- Kill switch is a hard stop with manual reset: forces a human review instead of silently re-arming.
+- Keep untuned defaults (252/21/8): walk-forward did not beat them convincingly; avoid overfitting.
+- Market-on-close whole-share orders, monthly rebalance from previous month-end signal (matches backtest).
+- yfinance known-dead tickers skipped (`KNOWN_NO_DATA`) to keep daily runs quiet.
+
+Next:
+- Recommended: wait for the 2026-12-01 rebalance before the first `live.py --submit` (current signal is
+  stale and all-semis/storage; a shadow run from 2026-11-03 lost ~17%). User has not decided.
+- Then run `live.py` every trading day (no schedule yet; launchd only if asked), `compare.py` weekly.
+- Open questions: cap the uncapped "hardware"/storage group? Earnings-gap policy? Step 7 only after
+  weeks-months of paper results.
+
 ## Style
 
 - Python, type hints, small pure functions; pandas/numpy conventions already used in the repo.
