@@ -26,6 +26,8 @@ Current files:
                  monthly targets from previous month-end close -> risk layer -> whole-share orders.
                  Dry run by default; `--submit` sends to paper. Logs: `logs/YYYY-MM-DD.jsonl`,
                  state: `state/live_state.json` (`--offline` uses separate files)
+- `compare.py`   step 6: live paper equity vs a shadow backtest of the same config from the first
+                 live trade, fill slippage vs close, failed orders and alerts
 - `walkforward.py` rolling 3y-train / 1y-test walk-forward with a 24-combo parameter sweep, OOS report
                  (`python walkforward.py pit|static`)
 - `tests/`       pytest: no look-ahead, weights, excess Sharpe, fold/selection/stitching logic
