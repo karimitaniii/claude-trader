@@ -30,7 +30,8 @@ Current files:
                  Needs its OWN Alpaca paper account (`ALPACA_TREND_API_KEY/SECRET_KEY`); same kill switch;
                  logs in `logs/trend/`, state in `state/trend_state.json`. Dry run by default, `--submit` sends
 - `compare.py`   step 6: live paper equity vs a shadow backtest of the same config from the first
-                 live trade, fill slippage vs close, failed orders and alerts
+                 live trade, fill slippage vs close, failed orders and alerts; covers momentum and the QQQ trend
+                 runner (`--strategy momentum|trend|both`), plus both live accounts head to head
 - `walkforward.py` rolling 3y-train / 1y-test walk-forward with a 48-combo parameter sweep, OOS report
                  (`python walkforward.py pit|static`)
 - `report.py`    visual report: $100k growth vs QQQ, drawdowns, annual returns, start-date sensitivity,
@@ -101,7 +102,7 @@ Current files:
 ## Status (2026-11-25)
 
 Steps 1-5 done; step 6 tooling done (`compare.py`), no paper orders submitted yet. Repo:
-github.com/karimitaniii/claude-trader (private, `main`). 67 tests pass.
+github.com/karimitaniii/claude-trader (private, `main`). 70 tests pass.
 
 Key results (costs on, PIT universe, 2014+): momentum excess Sharpe 0.72 vs QQQ 0.79, MaxDD -0.57; no
 evidence of edge beyond leveraged QQQ (alpha t=0.34). Full numbers and reasoning: `DECISIONS.md`.
@@ -117,7 +118,7 @@ Next:
 - Recommended: wait for the 2026-12-01 rebalance before the first `live.py --submit` (current signal is
   stale and all-semis/storage; a shadow run from 2026-11-03 lost ~17%). User has not decided.
 - Also create a second Alpaca paper account for `trend_live.py` (QQQ 200d trend baseline); run both daily and
-  compare live. `compare.py` does not cover the trend runner yet.
+  compare live with `python compare.py` (weekly).
 - Then run `live.py` every trading day (no schedule yet; launchd only if asked), `compare.py` weekly.
 - Open questions: Step 7 only after
   weeks-months of paper results.
