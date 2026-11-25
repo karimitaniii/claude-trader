@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mt
 import pandas as pd
 
-from analysis.common import HARD_STOP, LIVE_RULES, NO_RISK, REARMED, Runs, build_runs
+from analysis.common import completed_bars, HARD_STOP, LIVE_RULES, NO_RISK, REARMED, Runs, build_runs
 from backtest import INIT_CASH
 from data import BENCHMARK
 from risk import apply_limits
@@ -137,6 +137,7 @@ def plot_holdings(runs: Runs) -> None:
 
 def plot_current(runs: Runs) -> pd.DataFrame:
     close, eligible = load_universe("pit")
+    close = completed_bars(close)
     day = close.index[-1]
     raw = targets_from_signal_day(close, day, eligible=eligible)
     trend_ok = bool(runs.bench.iloc[-1] >= runs.bench.rolling(200).mean().iloc[-1])

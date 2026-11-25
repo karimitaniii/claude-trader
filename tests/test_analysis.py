@@ -47,3 +47,12 @@ def test_scale_weights_only_reduces_and_uses_past_data():
     close2 = close.copy()
     close2.iloc[150:] *= 3
     assert np.allclose(scale_weights(close2, w, target=0.10).iloc[150], scaled.iloc[150])
+
+
+def test_tech_intervals_all_keeps_non_tech():
+    from universe import tech_intervals
+
+    iv = pd.DataFrame({"ticker": ["AAA", "BBB"], "start": pd.to_datetime(["2020-01-01"] * 2), "end": [pd.NaT] * 2})
+    sm = pd.DataFrame({"ticker": ["AAA", "BBB"], "category": ["software", "non_tech"], "tech_like": [1, 0], "note": ["", ""]})
+    assert list(tech_intervals(iv, sm)["ticker"]) == ["AAA"]
+    assert list(tech_intervals(iv, sm, tech_only=False)["ticker"]) == ["AAA", "BBB"]

@@ -23,6 +23,11 @@ HARD_STOP = "Momentum + risk (hard stop)"
 REARMED = "Momentum + risk (re-armed)"
 
 
+def completed_bars(obj):
+    """Drop rows dated today or later: during market hours yfinance returns a partial bar (as live.py does)."""
+    return obj.loc[obj.index.normalize() < pd.Timestamp.today().normalize()]
+
+
 @dataclass
 class Runs:
     close: pd.DataFrame            # PIT universe closes (ffilled)
@@ -36,9 +41,10 @@ class Runs:
     start: pd.Timestamp            # first trading day
 
 
-def build_runs(top_n: int = 8, lookback: int = 252, skip: int = 21) -> Runs:
-    close, eligible = load_universe("pit")
-    bench = load_prices([BENCHMARK])[BENCHMARK].ffill()
+def build_runs(top_n: int = 8, lookback: int = 252, skip: int = 21, universe: str = "pit") -> Runs:
+    close, eligible = load_universe(universe)
+    close = completed_bars(close)
+    bench = completed_bars(load_prices([BENCHMARK])[BENCHMARK].ffill())
     rf = load_risk_free()
     groups = symbol_groups(close.columns)
     weights = target_weights(close, top_n=top_n, lookback=lookback, skip=skip, eligible=eligible)

@@ -12,7 +12,7 @@ Current files:
 - `data.py`      download and cache adjusted daily closes (yfinance -> `data_cache/close_<hash>.csv`, keyed by
                  ticker set; empty columns retried) and the 13w T-bill rate (`data_cache/irx.csv`)
 - `universe.py`  point-in-time Nasdaq-100 membership (jmccarrell/n100tickers, pinned commit) filtered to
-                 tech-like names via `universe_data/ndx_sector_map.csv`; `load_universe("pit"|"static")`
+                 tech-like names via `universe_data/ndx_sector_map.csv`; `load_universe("pit"|"all"|"static")` ("all" = every sector, comparison only)
 - `signals.py`   12-1 momentum -> monthly equal-weight top-N target weights (shifted 1 bar), only names
                  eligible on the signal date; `equal_weights` = same-universe no-selection benchmark
 - `backtest.py`  vectorbt backtest vs equal-weight universe and QQQ, with fees and slippage,

@@ -47,3 +47,12 @@ data. Edge test and vol scaling match the logged numbers within rounding (alpha 
 CAGR 0.202 / MaxDD -0.35). Earnings reaction stats match (1.6% of held days, +0.62% vs +0.11%); the "skip
 reaction days" counterfactual ignores exit/re-entry costs (CAGR 0.214 vs 0.236), so it is less negative than the
 original -3 pt figure, which included them.
+
+- Full Nasdaq-100 vs tech-like universe (2026-11-25, `analysis/universe_compare.py`, `load_universe("all")`, same
+  12-1 / top 8 / monthly rules, costs on, 2014-02..2026-11): full NDX is worse on every measure. No risk layer: CAGR
+  0.206 vs 0.236, excess Sharpe 0.65 vs 0.71, MaxDD -0.56 both, $100k -> $1.10M vs $1.51M (QQQ $0.82M). With risk
+  re-armed: 0.163 vs 0.205 CAGR, Sharpe 0.61 vs 0.73. Equal-weight full NDX also lags tech-like (0.147 vs 0.202).
+  Alpha vs QQQ stays indistinguishable from zero in both (t 0.17 vs 0.38). Momentum did hold non-tech names
+  (about 39% of equity on average), so the tech filter is not what drives picks, but those names did not pay.
+  Caveat: 15.6% of full-NDX member-days have no price (9.9% tech-like), so the comparison is more survivorship-
+  biased against the wider universe; non-tech names are one uncapped "non_tech" risk group. Decision: stay tech-like.
