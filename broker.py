@@ -32,12 +32,14 @@ class Broker(Protocol):
 class AlpacaPaperBroker:
     """Thin wrapper over alpaca-py's TradingClient, locked to the paper environment."""
 
-    def __init__(self) -> None:
+    def __init__(self, key_env: str = "ALPACA_API_KEY", secret_env: str = "ALPACA_SECRET_KEY") -> None:
+        """`key_env`/`secret_env` name the environment variables to read, so a second strategy can use a
+        second paper account (the account holds the positions and equity, so strategies cannot share one)."""
         from alpaca.trading.client import TradingClient
 
-        key, secret = os.environ.get("ALPACA_API_KEY"), os.environ.get("ALPACA_SECRET_KEY")
+        key, secret = os.environ.get(key_env), os.environ.get(secret_env)
         if not key or not secret:
-            raise RuntimeError("set ALPACA_API_KEY and ALPACA_SECRET_KEY (paper account keys)")
+            raise RuntimeError(f"set {key_env} and {secret_env} (paper account keys)")
         self._client = TradingClient(key, secret, paper=True)  # never change: paper only
         url = getattr(self._client, "_base_url", "")
         base = str(getattr(url, "value", url))

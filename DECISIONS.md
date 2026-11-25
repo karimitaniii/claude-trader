@@ -64,3 +64,12 @@ original -3 pt figure, which included them.
   alpha t=1.90) and 100d worse (0.50), but three windows were tried and the best one picked in-sample, so treat
   150d as a hint, not a result. Read: trend-following QQQ matches momentum's risk-adjusted return with about
   half the drawdown and ~40% lower beta, but earns much less in $ terms. Momentum's extra $ is leverage-like risk.
+
+- Paper trade both strategies (2026-11-25): momentum (`live.py`) and the QQQ 200d trend baseline (`trend_live.py`),
+  each in its own Alpaca paper account because an account holds one set of positions and one equity (a shared
+  account would make each runner trade the other's positions and mix the kill-switch equity). Trend orders only on an
+  on/off change, so whole-share drift never causes daily trades. Live paper cash earns no T-bill interest, unlike the
+  backtest. Open: `compare.py` still covers momentum only; add a trend shadow comparison once there is live data.
+- Trend runner sizing (2026-11-25): target 98% of equity, not 100%, because the order is sized on yesterday's close and
+  fills at today's; a full-size order can exceed cash after a gap up and be rejected. Costs about 2% of cash drag.
+  `live.py` (momentum) has the same sizing pattern at up to 100% gross; not changed here.
