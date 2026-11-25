@@ -19,24 +19,34 @@ COST = FEES + SLIPPAGE
 TRADING_DAYS = 252
 
 
-def overlay_returns(bench: pd.Series, on: pd.Series, rf: pd.Series) -> tuple[pd.Series, int]:
-    """Daily returns of holding `bench` while the boolean signal `on` is True, else T-bills, plus switch count.
+def positions(on: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """(target, held) from a boolean signal known at each close.
 
     Timing (project rule 1): the signal from day t's close is an order for day t+1's close, so the position
-    only earns returns from day t+2 on: `held` is the signal shifted by 2 bars.
+    only earns returns from day t+2 on. `target[t]` is the order filled at close t (decided at close t-1) and
+    `held[t]` is the position carried through day t's return (the previous order): the signal shifted by 2 bars.
     """
-    on = on.astype(float)
-    target = on.shift(1).fillna(1.0)             # decided at close t-1, filled at close t
-    held = target.shift(1).fillna(1.0)           # position carried through day t's return
+    target = on.astype(float).shift(1).fillna(1.0)
+    held = target.shift(1).fillna(1.0)
+    return target, held
+
+
+def overlay_returns(
+    bench: pd.Series, on: pd.Series, rf: pd.Series, cost: float = COST
+) -> tuple[pd.Series, int]:
+    """Daily returns of holding `bench` while the boolean signal `on` is True, else T-bills, plus switch count."""
+    target, held = positions(on)
     trades = target.diff().abs().fillna(0.0)
     r = held * bench.pct_change() + (1 - held) * align_rf(rf, bench.index)
-    r = r - trades * COST                        # one-way cost on the whole portfolio at each switch
+    r = r - trades * cost                        # one-way cost on the whole portfolio at each switch
     return r, int(trades.sum())
 
 
-def trend_returns(bench: pd.Series, rf: pd.Series, window: int = 200) -> tuple[pd.Series, int]:
+def trend_returns(
+    bench: pd.Series, rf: pd.Series, window: int = 200, cost: float = COST
+) -> tuple[pd.Series, int]:
     """Daily returns of the QQQ-above-SMA rule and the number of switches (see `overlay_returns`)."""
-    return overlay_returns(bench, trend_ok(bench, window), rf)
+    return overlay_returns(bench, trend_ok(bench, window), rf, cost)
 
 
 def main() -> None:

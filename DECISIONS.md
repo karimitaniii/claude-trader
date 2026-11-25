@@ -2,6 +2,20 @@
 
 Moved out of CLAUDE.md (2026-11-25) to keep every session cheap. Read only when revisiting a decision.
 
+## Before running a new experiment (pre-registration checklist)
+
+Adopted 2026-11-25 after the QQQ-trend timing bug and ~80 variants tried (ledger at the bottom).
+1. Hypothesis in one sentence, with the economic reason it should work.
+2. Parameters and the adoption rule (metric, threshold, and the baselines to beat: QQQ buy-and-hold and the 200d
+   trend) written down BEFORE running. Extra values are "sensitivity only", never candidates.
+3. Costs on; anything that trades more than the baseline also gets a cost stress (`analysis/cost_stress.py` pattern).
+4. Timing: signal at t trades at t+1's close. Any new signal/position path needs a shock test in
+   `tests/test_lookahead.py` (perturb prices from t-1 on, nothing earlier may move) with a negative control.
+5. Same dates as the baselines; no trimming of the sample after the fact.
+6. Report everything tried, failures included, and add a row to the ledger. Adopt only if it beats the baselines
+   after costs out of sample or in paper trading. With this many looks, in-sample t-stats near 2 are expected by
+   chance; a common factor-research rule of thumb is t > 3.
+
 Key results (costs on, PIT universe, 2014+): momentum CAGR 0.244, excess Sharpe 0.72, MaxDD -0.57;
 QQQ excess Sharpe 0.79; equal-weight universe about as good as momentum. Walk-forward OOS 0.75.
 With all risk defaults + hard-stop kill switch: CAGR 0.14, MaxDD -0.27 (one kill, 2021-05, then cash).
@@ -89,3 +103,30 @@ original -3 pt figure, which included them.
   test): no clear return difference between states. Below the 200d average the mean forward return is +2.1% vs
   +1.5% above it, but forward volatility is 36% vs 18%; dist >= 5 gives 1.5% vs 1.8% with vol 24% vs 15%. So the 200d trend works as a volatility-regime indicator, not a return
   forecast, which is consistent with the vol-scaling result (lower drawdown, Sharpe roughly unchanged).
+
+- Cost stress (2026-11-25, `analysis/cost_stress.py`, fees 5 bps + slippage 5/10/20/40 bps, 2014-02..2026-11): costs
+  do not change the picture. Momentum no-risk CAGR 0.236 -> 0.232 -> 0.225 -> 0.210, excess Sharpe 0.71 -> 0.65,
+  $1.51M -> $1.14M (QQQ $818k); traded notional (buys + sells) of ~6.4x average equity per year (~3.2x one-way), so each +10 bps of slippage costs ~0.6 pts/yr.
+  QQQ trend 200d: CAGR 0.133 -> 0.114, Sharpe 0.72 -> 0.61, ~4.8 switches/yr. No strategy reaches QQQ's Sharpe (0.78)
+  at any cost level. The re-armed risk-layer row is not monotone (CAGR 0.205 at 5 bps, 0.207 at 10 bps): kill-switch
+  timing shifts with equity, so read its cost sensitivity loosely. Real slippage is unknown until paper fills
+  (`compare.py`); mid-size picks (SNDK, LITE, ...) likely sit at 10-20 bps, not 5.
+
+## Variants ledger (lower bound; early exploratory runs were not logged)
+
+| Family | Variants tried |
+|---|---|
+| Momentum parameters (lookback x skip x top_n), walk-forward grid (widened once after seeing results) | 48 |
+| Rebalance frequency (M / W / D) | 3 |
+| Universes (static 24, PIT tech-like, full Nasdaq-100) | 3 |
+| Risk-layer variants in `backtest.py` (each rule alone, kill-switch hard stop / re-arm, all) | 7 |
+| Hardware group cap (50 / 35 / 25, semis-only) | 3 |
+| Kill-switch re-arm studies (threshold 25 / 35, cooldown 21-126d) | ~6 |
+| Earnings handling (hold / exit / half size) | 3 |
+| Volatility scaling (target 25%) | 1 |
+| QQQ trend windows (100 / 150 / 200d) | 3 |
+| Distribution-day thresholds (4 / 5 / 6) | 3 |
+| **Total** | **~80** |
+
+Best in-sample alpha t-stat among them: 1.85 (63/0/8 lookback, a hindsight pick). None reached 3. With ~80 looks,
+that is what noise looks like, which is consistent with "no evidence of edge beyond QQQ".
