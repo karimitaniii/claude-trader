@@ -76,3 +76,16 @@ original -3 pt figure, which included them.
 - Trend runner sizing (2026-11-25): target 98% of equity, not 100%, because the order is sized on yesterday's close and
   fills at today's; a full-size order can exceed cash after a gap up and be rejected. Costs about 2% of cash drag.
   `live.py` (momentum) has the same sizing pattern at up to 100% gross; not changed here.
+
+- Distribution-day filter (2026-11-25, `analysis/distribution.py`, QQQ overlay, 2014-02..2026-11, costs on, signal at
+  t trades at t+1): IBD-style distribution day = QQQ down >= 0.2% on higher volume than the prior day; rule fixed
+  BEFORE looking: out when >= 5 in the last 25 sessions. Result: it fails. With QQQ's volatility such days are 23% of
+  all days, so the count is >= 5 on 71% of days and the rule sits in T-bills most of the time: CAGR 0.052, excess
+  Sharpe 0.43, 203 switches (QQQ 0.78; 200d trend 0.72). Combined with the 200d trend it is worse (Sharpe 0.30). The
+  4 and 6 thresholds (sensitivity only) give 0.05 and 0.59: no setting beats the plain 200d trend, and tuning the
+  threshold upward would just be an in-sample pick. The classic 4-5 count was set for a calmer index/era, so the
+  threshold does not transfer. Not adopted, not worth integrating into `risk.py`.
+  Information content (QQQ forward 21d return by state; descriptive only, overlapping windows, no significance
+  test): no clear return difference between states. Below the 200d average the mean forward return is +2.1% vs
+  +1.5% above it, but forward volatility is 36% vs 18%; dist >= 5 gives 1.5% vs 1.8% with vol 24% vs 15%. So the 200d trend works as a volatility-regime indicator, not a return
+  forecast, which is consistent with the vol-scaling result (lower drawdown, Sharpe roughly unchanged).
