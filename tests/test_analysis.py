@@ -1,0 +1,49 @@
+"""Unit tests for the analysis helpers (no network, no vectorbt portfolios)."""
+import numpy as np
+import pandas as pd
+
+from analysis.earnings import reaction_mask
+from analysis.edge_test import block_indices, newey_west_ols
+from analysis.vol_scaling import scale_weights
+
+
+def test_newey_west_recovers_alpha_beta():
+    rng = np.random.default_rng(1)
+    x = rng.normal(0, 0.01, 4000)
+    y = 0.0004 + 1.5 * x + rng.normal(0, 0.002, 4000)
+    out = newey_west_ols(y, x)
+    assert abs(out["beta"] - 1.5) < 0.05
+    assert abs(out["alpha_daily"] - 0.0004) < 0.0001
+    assert out["r2"] > 0.9
+
+
+def test_block_indices_shape_and_range():
+    idx = block_indices(100, 21, np.random.default_rng(0))
+    assert len(idx) == 100 and idx.min() >= 0 and idx.max() < 100
+
+
+def test_reaction_mask_before_and_after_close():
+    index = pd.bdate_range("2024-01-01", periods=10)
+    earn = pd.DataFrame({
+        "symbol": ["A", "B"],
+        "when": [pd.Timestamp("2024-01-03 16:30"), pd.Timestamp("2024-01-04 07:00")],
+    })
+    m = reaction_mask(earn, index, ["A", "B"])
+    assert m.loc["2024-01-04", "A"] and not m.loc["2024-01-03", "A"]   # after close -> next day
+    assert m.loc["2024-01-04", "B"] and not m.loc["2024-01-03", "B"]   # before open -> same day
+
+
+def test_scale_weights_only_reduces_and_uses_past_data():
+    n = 200
+    idx = pd.bdate_range("2023-01-02", periods=n)
+    rng = np.random.default_rng(0)
+    close = pd.DataFrame(100 * np.cumprod(1 + rng.normal(0, 0.03, (n, 2)), axis=0), index=idx, columns=["X", "Y"])
+    w = pd.DataFrame(np.nan, index=idx, columns=close.columns)
+    w.iloc[150] = [0.5, 0.5]
+    scaled = scale_weights(close, w, target=0.10)
+    assert scaled.iloc[150].sum() < 1.0 - 1e-9
+    assert (scaled.iloc[150] <= w.iloc[150] + 1e-12).all()
+    # changing the trade day's own return must not change the scale (no look-ahead)
+    close2 = close.copy()
+    close2.iloc[150:] *= 3
+    assert np.allclose(scale_weights(close2, w, target=0.10).iloc[150], scaled.iloc[150])

@@ -24,20 +24,26 @@ Decisions and why:
   only), MaxDD -0.50 vs -0.57; 25% was best in-sample (0.75) but not chosen to avoid tuning. Cut goes to
   cash. The hardware group is mixed (AAPL, CSCO, storage, optics, solar), not storage-only.
 - Earnings (2026-11-25): hold through. yfinance earnings dates 2002+ (cached `data_cache/earnings.csv`,
-  analysis not in repo). Held names' earnings-reaction days: 1.6% of held days, mean +0.62% vs +0.11%
+  `analysis/earnings.py`). Held names' earnings-reaction days: 1.6% of held days, mean +0.62% vs +0.11%
   normal, ~8% of portfolio variance. Exit over earnings: CAGR 0.201 vs 0.234, excess Sharpe 0.64 vs 0.70,
   MaxDD -0.55 vs -0.57; half size in between. Momentum names tend to gap up on earnings.
 - Kill switch (2026-11-25): keep the live hard stop with manual reset. Re-arm backtests: vs no kill switch
   (CAGR 0.207, Sharpe 0.70, MaxDD -0.49) it adds little (Sharpe +0.01-0.03, MaxDD a few pts); cooldown
   length barely matters; 35% threshold ~= no kill switch. Its value is forcing a human review, not returns.
-- Is there an edge? (2026-11-25, PIT 2014+, daily excess returns, script not in repo): regression on QQQ
+- Is there an edge? (2026-11-25, PIT 2014+, daily excess returns, `analysis/edge_test.py`): regression on QQQ
   (Newey-West t): default alpha +1.9%/yr t=0.34, beta 1.43, R2 0.70 -> mostly leveraged QQQ, no evidence of
   skill; 63/0/8 alpha +9.1%/yr t=1.85 (borderline, and a hindsight pick). Block bootstrap (21d blocks, 5000):
   default Sharpe 0.70 [0.21, 1.22], QQQ 0.78 [0.30, 1.30]; P(default > QQQ) 0.31, P(63/0/8 > default) 0.94
   (CI includes 0), P(hw35 cap > semis-only) 0.99 but only +0.04. ~13 years cannot separate Sharpe gaps < ~0.3.
-- Volatility scaling (2026-11-25, script not in repo, not implemented): at each monthly rebalance scale the
+- Volatility scaling (2026-11-25, `analysis/vol_scaling.py`, not implemented in live): at each monthly rebalance scale the
   top-8 basket by min(1, target / trailing 63d vol). Target 25%: CAGR 0.202, vol 0.26, excess Sharpe 0.76 vs
   0.70, MaxDD -0.35 vs -0.57, 2022 -0.24 vs -0.39, but 2020 +0.36 vs +0.90 (sits out the rebound). Paired
   Sharpe diff +0.06, CI [-0.12, 0.26], P>0 0.71: not distinguishable from QQQ (0.78). Not adopted.
 - Market-on-close whole-share orders, monthly rebalance from previous month-end signal (matches backtest).
 - yfinance known-dead tickers skipped (`KNOWN_NO_DATA`) to keep daily runs quiet.
+
+Reproduction note (2026-11-25): the analysis scripts were rewritten from the descriptions above and re-run on fresh
+data. Edge test and vol scaling match the logged numbers within rounding (alpha +2.1%/yr t=0.38, vol-scaled
+CAGR 0.202 / MaxDD -0.35). Earnings reaction stats match (1.6% of held days, +0.62% vs +0.11%); the "skip
+reaction days" counterfactual ignores exit/re-entry costs (CAGR 0.214 vs 0.236), so it is less negative than the
+original -3 pt figure, which included them.
