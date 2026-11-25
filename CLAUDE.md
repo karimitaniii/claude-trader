@@ -73,7 +73,7 @@ Current files:
   not tuned. The kill switch is a hard stop on drawdown from the all-time high: once fired, the
   strategy stays in cash until a human reviews and calls `KillSwitch.reset()`. It acts at the next
   close, so gaps can push a loss past 25%.
-- Earnings gaps (10-20% overnight) are not handled yet; decide explicitly whether to hold through earnings.
+- Earnings gaps: decided to hold through (see Decisions). About 20% of held-name earnings days move >10%.
 
 ## Roadmap (in order)
 
@@ -112,6 +112,10 @@ Decisions and why:
 - Hardware cap 35% (2026-11-25): a 50% cap never bound; 35% gave excess Sharpe 0.72 vs 0.68 (semis cap
   only), MaxDD -0.50 vs -0.57; 25% was best in-sample (0.75) but not chosen to avoid tuning. Cut goes to
   cash. The hardware group is mixed (AAPL, CSCO, storage, optics, solar), not storage-only.
+- Earnings (2026-11-25): hold through. yfinance earnings dates 2002+ (cached `data_cache/earnings.csv`,
+  analysis not in repo). Held names' earnings-reaction days: 1.6% of held days, mean +0.62% vs +0.11%
+  normal, ~8% of portfolio variance. Exit over earnings: CAGR 0.201 vs 0.234, excess Sharpe 0.64 vs 0.70,
+  MaxDD -0.55 vs -0.57; half size in between. Momentum names tend to gap up on earnings.
 - The hard-stop kill switch dominates risk-on backtest numbers (whichever date it fires); consider
   backtesting a reviewed-reset policy.
 - Market-on-close whole-share orders, monthly rebalance from previous month-end signal (matches backtest).
@@ -121,7 +125,7 @@ Next:
 - Recommended: wait for the 2026-12-01 rebalance before the first `live.py --submit` (current signal is
   stale and all-semis/storage; a shadow run from 2026-11-03 lost ~17%). User has not decided.
 - Then run `live.py` every trading day (no schedule yet; launchd only if asked), `compare.py` weekly.
-- Open questions: earnings-gap policy? Step 7 only after
+- Open questions: Step 7 only after
   weeks-months of paper results.
 
 ## Style
