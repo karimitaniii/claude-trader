@@ -56,3 +56,17 @@ def test_tech_intervals_all_keeps_non_tech():
     sm = pd.DataFrame({"ticker": ["AAA", "BBB"], "category": ["software", "non_tech"], "tech_like": [1, 0], "note": ["", ""]})
     assert list(tech_intervals(iv, sm)["ticker"]) == ["AAA"]
     assert list(tech_intervals(iv, sm, tech_only=False)["ticker"]) == ["AAA", "BBB"]
+
+
+def test_trend_returns_no_lookahead_and_costs():
+    from analysis.qqq_trend import COST, trend_returns
+
+    idx = pd.bdate_range("2023-01-02", periods=60)
+    px = pd.Series(100.0, index=idx)
+    px.iloc[40:] = 50.0                      # crash on day 40: stays below the 30d average through day 59
+    rf = pd.Series(0.0, index=idx)
+    r, switches = trend_returns(px, rf, window=30)
+    assert r.iloc[40] == px.pct_change().iloc[40]   # still fully invested on the crash day (decided at close of 39)
+    assert switches == 1
+    assert r.iloc[41] == -COST                       # exit trade on day 41 pays one-way cost, then flat in cash
+    assert (r.iloc[42:] == 0).all()
