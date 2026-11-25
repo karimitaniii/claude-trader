@@ -8,7 +8,8 @@ The strategy proposes target weights; this module decides what is actually allow
    re-arms automatically after `kill_cooldown_days` once the benchmark is above trend, resetting
    the high-water mark (caps each episode, not total drawdown).
 2. Position cap: no single name above `max_position` (excess goes to cash, not redistributed).
-3. Group caps: e.g. semis + semi equipment together at most 50% of equity (scaled pro rata).
+3. Group caps: semis + semi equipment at most 50%, hardware (incl. storage) at most 35% of equity
+   (scaled pro rata).
 4. Sell-off rule: if the benchmark closed below its `trend_window`-day average on the signal
    day, gross exposure is cut to `selloff_gross`.
 5. Gross cap: total long exposure at most `max_gross` (no leverage).
@@ -32,7 +33,8 @@ EPS = 1e-12
 class RiskLimits:
     max_position: float = 0.15
     max_gross: float = 1.0
-    group_caps: tuple[tuple[str, float], ...] = (("semis", 0.50),)
+    # hardware 35% (incl. storage): a priori, between the in-sample best 25% and a non-binding 50%
+    group_caps: tuple[tuple[str, float], ...] = (("semis", 0.50), ("hardware", 0.35))
     trend_window: int = 200
     selloff_gross: float = 0.50
     kill_drawdown: float = 0.25

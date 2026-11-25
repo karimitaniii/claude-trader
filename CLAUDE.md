@@ -17,8 +17,8 @@ Current files:
                  eligible on the signal date; `equal_weights` = same-universe no-selection benchmark
 - `backtest.py`  vectorbt backtest vs equal-weight universe and QQQ, with fees and slippage,
                  sub-period stats incl. excess Sharpe (vs 13w T-bill), equity plot
-- `risk.py`      risk layer, separate from the strategy and able to override it: position cap, group cap
-                 (semis), sell-off rule (QQQ < 200d SMA -> 50% gross), drawdown kill switch with cooldown;
+- `risk.py`      risk layer, separate from the strategy and able to override it: position cap, group caps
+                 (semis 50%, hardware 35%), sell-off rule (QQQ < 200d SMA -> 50% gross), drawdown kill switch with cooldown;
                  `run_with_risk` is a causal daily loop whose orders are re-run through vectorbt
 - `broker.py`    Alpaca PAPER-only wrapper (paper=True hard-coded, endpoint checked), market-on-close
                  orders with deterministic client_order_id; `PaperSimBroker` for offline runs/tests
@@ -69,7 +69,7 @@ Current files:
 - Tech's long bull run flatters long-only backtests; always inspect 2022, and 2000-2002 / 2008
   if data allows.
 - Stocks in this universe are highly correlated; top-N is less diversified than it looks.
-- Risk defaults (15% position, 50% semis, 25% kill switch, 21-day cooldown, 200d trend) are a priori,
+- Risk defaults (15% position, 50% semis, 35% hardware, 25% kill switch, 21-day cooldown, 200d trend) are a priori,
   not tuned. The kill switch is a hard stop on drawdown from the all-time high: once fired, the
   strategy stays in cash until a human reviews and calls `KillSwitch.reset()`. It acts at the next
   close, so gaps can push a loss past 25%.
@@ -109,6 +109,9 @@ Decisions and why:
   walk-forward with 48-combo grid OOS 0.86 vs default 0.63, but static walk-forward 0.83 vs default 0.84
   and grid widened after seeing results (snooping). With all risk rules 63/0/8 is worse (kill 2020-03,
   then cash). Decision: keep 252/21/8 for first paper trades; revisit after paper results.
+- Hardware cap 35% (2026-11-25): a 50% cap never bound; 35% gave excess Sharpe 0.72 vs 0.68 (semis cap
+  only), MaxDD -0.50 vs -0.57; 25% was best in-sample (0.75) but not chosen to avoid tuning. Cut goes to
+  cash. The hardware group is mixed (AAPL, CSCO, storage, optics, solar), not storage-only.
 - The hard-stop kill switch dominates risk-on backtest numbers (whichever date it fires); consider
   backtesting a reviewed-reset policy.
 - Market-on-close whole-share orders, monthly rebalance from previous month-end signal (matches backtest).
@@ -118,7 +121,7 @@ Next:
 - Recommended: wait for the 2026-12-01 rebalance before the first `live.py --submit` (current signal is
   stale and all-semis/storage; a shadow run from 2026-11-03 lost ~17%). User has not decided.
 - Then run `live.py` every trading day (no schedule yet; launchd only if asked), `compare.py` weekly.
-- Open questions: cap the uncapped "hardware"/storage group? Earnings-gap policy? Step 7 only after
+- Open questions: earnings-gap policy? Step 7 only after
   weeks-months of paper results.
 
 ## Style

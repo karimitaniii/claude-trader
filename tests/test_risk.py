@@ -135,3 +135,11 @@ def test_costs_are_charged_on_traded_notional():
     close, targets, bench = make_market(crash_at=60)
     run = run_with_risk(close, targets, pd.Series({"A": "x", "C": "y"}), bench, NO_LIMITS, cost_rate=0.001)
     assert run.equity.iloc[1] == pytest.approx(100_000 * (1 - 0.001))
+
+
+def test_default_limits_cap_hardware_at_35pct():
+    groups = pd.Series({"A": "semis", "B": "semis", "C": "hardware", "D": "hardware"})
+    out, fired = apply_limits(w(A=0.25, B=0.25, C=0.25, D=0.25), groups, RiskLimits(max_position=1.0))
+    assert abs(out[["C", "D"]].sum() - 0.35) < 1e-12
+    assert abs(out[["A", "B"]].sum() - 0.50) < 1e-12
+    assert any("hardware" in f for f in fired)
