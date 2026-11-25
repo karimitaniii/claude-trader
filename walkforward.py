@@ -26,8 +26,8 @@ from universe import load_universe
 Params = tuple[int, int, int]  # (lookback, skip, top_n)
 
 GRID: dict[str, list[int]] = {
-    "lookback": [126, 189, 252],
-    "skip": [0, 21],
+    "lookback": [63, 126, 189, 252],
+    "skip": [0, 5, 21],
     "top_n": [4, 6, 8, 10],
 }
 DEFAULT: Params = (252, 21, 8)

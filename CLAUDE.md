@@ -28,7 +28,7 @@ Current files:
                  state: `state/live_state.json` (`--offline` uses separate files)
 - `compare.py`   step 6: live paper equity vs a shadow backtest of the same config from the first
                  live trade, fill slippage vs close, failed orders and alerts
-- `walkforward.py` rolling 3y-train / 1y-test walk-forward with a 24-combo parameter sweep, OOS report
+- `walkforward.py` rolling 3y-train / 1y-test walk-forward with a 48-combo parameter sweep, OOS report
                  (`python walkforward.py pit|static`)
 - `tests/`       pytest: no look-ahead, weights, excess Sharpe, fold/selection/stitching logic
 
@@ -102,6 +102,15 @@ Decisions and why:
 - Free hybrid PIT data (n100tickers + yfinance), tech-like NDX members: no paid data; accept ~10% missing.
 - Kill switch is a hard stop with manual reset: forces a human review instead of silently re-arming.
 - Keep untuned defaults (252/21/8): walk-forward did not beat them convincingly; avoid overfitting.
+- Rebalance frequency (2026-11-25, `target_weights(freq="M"|"W"|"D")`): weekly ~= monthly, daily clearly
+  worse at every lookback (CAGR -4..-7 pts/yr; trading only on pick changes did not help -> whipsaw, not
+  just costs). Stay monthly. Constant intraday trading would need a different, short-horizon strategy.
+- Shorter lookback (63/0/8): full-sample excess Sharpe PIT 0.92 vs 0.70, static 1.05 vs 0.94; PIT
+  walk-forward with 48-combo grid OOS 0.86 vs default 0.63, but static walk-forward 0.83 vs default 0.84
+  and grid widened after seeing results (snooping). With all risk rules 63/0/8 is worse (kill 2020-03,
+  then cash). Decision: keep 252/21/8 for first paper trades; revisit after paper results.
+- The hard-stop kill switch dominates risk-on backtest numbers (whichever date it fires); consider
+  backtesting a reviewed-reset policy.
 - Market-on-close whole-share orders, monthly rebalance from previous month-end signal (matches backtest).
 - yfinance known-dead tickers skipped (`KNOWN_NO_DATA`) to keep daily runs quiet.
 

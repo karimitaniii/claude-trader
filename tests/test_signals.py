@@ -86,3 +86,18 @@ def test_equal_weights_spreads_over_all_eligible_scored_names():
     assert len(rows) > 0
     np.testing.assert_allclose(rows.drop(columns="S9").to_numpy(), 1 / 9)
     assert (rows["S9"] == 0).all()
+
+
+def test_weekly_and_daily_rebalance_dates_and_no_look_ahead():
+    close = synthetic_prices()
+    week_ends = close.groupby(close.index.to_period("W")).tail(1).index
+    w = target_weights(close, top_n=4, lookback=126, skip=21, freq="W")
+    for day in w.dropna(how="all").index:
+        assert close.index[close.index.get_loc(day) - 1] in week_ends
+    d = target_weights(close, top_n=4, lookback=126, skip=21, freq="D")
+    rows = d.dropna(how="all")
+    assert len(rows) == len(close) - 126 - 1  # every day once the score exists, shifted 1 bar
+    # changing today's price must not change today's (or earlier) weights
+    bumped = close.copy()
+    bumped.iloc[-1] *= 2
+    pd.testing.assert_frame_equal(d, target_weights(bumped, top_n=4, lookback=126, skip=21, freq="D"))

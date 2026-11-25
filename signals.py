@@ -25,10 +25,16 @@ def eligible_scores(
     return mom
 
 
-def _monthly(close: pd.DataFrame, scores: pd.DataFrame, top_n: int | None) -> pd.DataFrame:
-    """Equal-weight the top_n scored names (all scored names if top_n is None) at each month end,
-    shifted one bar so the signal from day t's close trades on day t+1."""
-    rebalance_days = close.groupby(close.index.to_period("M")).tail(1).index
+def _monthly(
+    close: pd.DataFrame, scores: pd.DataFrame, top_n: int | None, freq: str = "M"
+) -> pd.DataFrame:
+    """Equal-weight the top_n scored names (all scored names if top_n is None) on the last trading
+    day of each period ("M" month, "W" week, "D" every day), shifted one bar so the signal from
+    day t's close trades on day t+1."""
+    if freq == "D":
+        rebalance_days = close.index
+    else:
+        rebalance_days = close.groupby(close.index.to_period(freq)).tail(1).index
     weights = pd.DataFrame(np.nan, index=close.index, columns=close.columns)
     for day in rebalance_days:
         picked = _pick(scores.loc[day], top_n)
@@ -70,15 +76,17 @@ def target_weights(
     lookback: int = 252,
     skip: int = 21,
     eligible: pd.DataFrame | None = None,
+    freq: str = "M",
 ) -> pd.DataFrame:
-    """Equal-weight the top_n momentum names on the last trading day of each month.
+    """Equal-weight the top_n momentum names on the last trading day of each month
+    (or week/day, see `freq`).
 
     Returns a DataFrame that is NaN except on rebalance rows (NaN = "no order").
     The weights are shifted by one bar: the signal is computed from the close on
     day t and traded on day t+1, so there is no look-ahead. Only names eligible on
     day t (point-in-time membership) can be picked.
     """
-    return _monthly(close, eligible_scores(close, lookback, skip, eligible), top_n)
+    return _monthly(close, eligible_scores(close, lookback, skip, eligible), top_n, freq)
 
 
 def equal_weights(
@@ -86,7 +94,8 @@ def equal_weights(
     lookback: int = 252,
     skip: int = 21,
     eligible: pd.DataFrame | None = None,
+    freq: str = "M",
 ) -> pd.DataFrame:
     """Benchmark: equal-weight every name the momentum strategy could have picked
     (eligible and with a valid score), on the same dates. Same universe, no selection."""
-    return _monthly(close, eligible_scores(close, lookback, skip, eligible), None)
+    return _monthly(close, eligible_scores(close, lookback, skip, eligible), None, freq)
