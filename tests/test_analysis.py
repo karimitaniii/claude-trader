@@ -74,3 +74,16 @@ def test_trend_returns_no_lookahead_and_costs():
     assert r.iloc[41] == pytest.approx(ret.iloc[41] - COST)
     assert switches == 1
     assert (r.iloc[42:] == 0).all()                   # in cash afterwards
+
+
+def test_distribution_days_and_count():
+    from analysis.distribution import distribution_count, distribution_days
+
+    idx = pd.bdate_range("2026-01-01", periods=6)
+    close = pd.Series([100, 99.5, 99.0, 99.2, 98.0, 98.1], index=idx, dtype=float)
+    volume = pd.Series([10, 12, 11, 15, 16, 14], index=idx, dtype=float)
+    d = distribution_days(close, volume)
+    # day1: -0.5% on higher volume -> yes; day2: -0.5% on LOWER volume -> no; day3: up; day4: -1.2% on higher volume -> yes
+    assert d.tolist() == [False, True, False, False, True, False]
+    assert distribution_count(close, volume, window=3).tolist() == [0, 1, 1, 1, 1, 1]
+    assert distribution_count(close, volume, window=2).iloc[-1] == 1   # day 4 still inside, day 1 dropped out
