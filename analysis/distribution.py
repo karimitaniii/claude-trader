@@ -20,7 +20,7 @@ from analysis.common import NO_RISK, REARMED, build_runs, completed_bars
 from analysis.edge_test import newey_west_ols
 from analysis.qqq_trend import overlay_returns
 from backtest import align_rf, metrics
-from data import BENCHMARK, CACHE_DIR
+from data import BENCHMARK, CACHE_DIR, finished_bars
 from risk import trend_ok
 
 TRADING_DAYS = 252
@@ -34,7 +34,7 @@ def load_volume(ticker: str = BENCHMARK, refresh: bool = False) -> pd.Series:
         return pd.read_csv(path, index_col=0, parse_dates=True).iloc[:, 0]
     CACHE_DIR.mkdir(exist_ok=True)
     raw = yf.download(ticker, start="2013-01-01", auto_adjust=True, progress=False)
-    vol = raw["Volume"].squeeze().dropna().rename("volume")
+    vol = finished_bars(raw["Volume"].squeeze().dropna().rename("volume"))
     if vol.empty:
         raise RuntimeError(f"no volume downloaded for {ticker}")
     vol.to_csv(path)

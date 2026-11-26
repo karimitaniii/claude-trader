@@ -16,11 +16,8 @@ Adopted 2026-11-25 after the QQQ-trend timing bug and ~80 variants tried (ledger
    after costs out of sample or in paper trading. With this many looks, in-sample t-stats near 2 are expected by
    chance; a common factor-research rule of thumb is t > 3.
 
-Data-cut note (2026-11-26): the figures below were computed on price data ending 2026-11-23. The paper runner's
-`refresh=True` rewrote the PIT price cache on 2026-11-25, so the same code on data ending 2026-11-25 gives momentum
-CAGR 0.223, excess Sharpe 0.68, MaxDD -0.59; QQQ CAGR 0.175, Sharpe 0.76, MaxDD -0.35 (`analysis/common.py`). Momentum
-fell ~18% in its last two days (-9.1%, -10.7%). The 2026-11-23 figures are kept as an earlier cut; dated entries
-below are as written at the time. Current numbers: "Recompute on data through 2026-11-25" near the end.
+Data note (2026-11-26): the dated entries below are as written at the time, on price data ending 2026-11-23. Current
+numbers are in "Recompute on data through 2026-11-25" near the end.
 Key results on the 11-23 cut (costs on, PIT universe, 2014+): momentum CAGR 0.244, excess Sharpe 0.72, MaxDD -0.57;
 QQQ excess Sharpe 0.79; equal-weight universe about as good as momentum. Walk-forward OOS 0.75.
 With all risk defaults + hard-stop kill switch: CAGR 0.14, MaxDD -0.27 (one kill, 2021-05, then cash).
@@ -124,34 +121,40 @@ original -3 pt figure, which included them.
   189 is 0.58-0.66. So 252 is locally stable but sits in the weaker half of the lookback axis, and a 63-day lookback
   is the best row, which the earlier 63/0/8 result already flagged (hindsight, not adopted). Diagnostic only: no
   parameter change. QQQ 0.76 on the same sample.
-  Reproduction note: the default here is 0.68 and QQQ 0.76, but the 2026-11-26 status lines above say momentum 0.71 and
-  QQQ 0.78. `analysis/common.py` gives the same 0.677 / 0.761 on the same sample. Cause found (2026-11-26): the data end, see the
-  data-cut note above; on the 11-23 cut the same code gives 0.723 / 0.785.
+  (These plateau figures included the unfinished 11-25 bar; corrected values are in the Recompute section.)
 
 ## Recompute on data through 2026-11-25 (run 2026-11-26; 2014-02-03..2026-11-25, costs on; no new variants)
 
-- Edge test: alpha vs QQQ +1.5%/yr t=0.27, beta 1.43, R2 0.70. Bootstrap excess Sharpe: momentum 0.68 [0.17, 1.21],
-  QQQ 0.76 [0.27, 1.29], P(momentum > QQQ) 0.30. Re-armed risk layer: alpha +5.3%/yr t=0.98, beta 0.94.
-- Cost stress, slippage 5 -> 40 bps: momentum CAGR 0.223 -> 0.197, Sharpe 0.68 -> 0.62, $1.32M -> $1.00M; re-armed
-  0.205 -> 0.173, Sharpe 0.73 -> 0.64 (0.735 at 10 bps); QQQ trend 0.133 -> 0.114, 0.72 -> 0.61. None reaches QQQ (0.76).
-- Universe: full NDX vs tech-like, no risk layer: CAGR 0.204 vs 0.223, Sharpe 0.64 vs 0.68, $1.07M vs $1.32M, but
-  MaxDD -0.56 vs -0.59, so full NDX is no longer worse on every measure. Re-armed 0.163 vs 0.205, Sharpe 0.61 vs 0.73.
-  Equal-weight: tech-like 0.196 / Sharpe 0.73 (above momentum's 0.68), full NDX 0.147 / 0.68. Alpha t 0.23 vs 0.27.
-  Decision unchanged: stay tech-like.
-- Vol scaling 25%: CAGR 0.198, vol 0.26, Sharpe 0.75 vs 0.68, MaxDD -0.35 vs -0.59, 2022 -0.24 vs -0.39, 2020 +0.36
-  vs +0.90. Paired Sharpe diff CI [-0.12, 0.28], P>0 0.74. Still not adopted.
-- Earnings: reaction days 1.6% of held days, +0.62% vs +0.10% other days, 5.7% of variance (logged earlier: ~8%).
-  Skip reaction days (ignores exit/re-entry costs): CAGR 0.201 vs 0.223, Sharpe 0.64 vs 0.68; half size between.
+Correction: the first recompute (PR #11 / #12, momentum 0.68, QQQ 0.76, "momentum fell 18% in two days") used an
+unfinished bar. `live.py` ran at 11:43 ET on 11-25 and `load_prices` cached that intraday price as the 11-25 close
+(true momentum return that day -1.9%, not -10.7%). It was found by checking against Alpaca daily bars, which match
+Yahoo within 0.6 pts for 11-19..11-24 (including 11-23) and disagreed by up to 11 pts on 11-25. Fix:
+`data.finished_bars` drops today's (New York) bar before caching; all price caches re-downloaded.
+
+- Headline: momentum CAGR 0.232, Sharpe 0.70, MaxDD -0.57; QQQ 0.178 / 0.78 / -0.35; static momentum 0.92.
+- Edge test: alpha vs QQQ +1.8%/yr t=0.33, beta 1.43, R2 0.70. Bootstrap excess Sharpe: momentum 0.70 [0.20, 1.22],
+  QQQ 0.78 [0.28, 1.30], P(momentum > QQQ) 0.31. Re-armed risk layer: alpha +5.0%/yr t=0.93, beta 0.94.
+- Cost stress, slippage 5 -> 40 bps: momentum CAGR 0.232 -> 0.206, Sharpe 0.70 -> 0.64, $1.45M -> $1.10M; re-armed
+  0.205 -> 0.173, Sharpe 0.73 -> 0.64 (0.735 at 10 bps); QQQ trend 0.133 -> 0.114, 0.72 -> 0.61. None reaches QQQ (0.78).
+- Universe: full NDX vs tech-like, no risk layer: CAGR 0.204 vs 0.232, Sharpe 0.64 vs 0.70, $1.07M vs $1.45M, MaxDD
+  -0.56 vs -0.57. Re-armed 0.163 vs 0.205, Sharpe 0.61 vs 0.73. Equal-weight: tech-like 0.201 / Sharpe 0.75 (above
+  momentum's 0.70), full NDX 0.147 / 0.68. Alpha t 0.15 vs 0.33. Decision unchanged: stay tech-like.
+- Vol scaling 25%: CAGR 0.201, vol 0.26, Sharpe 0.76 vs 0.70, MaxDD -0.35 vs -0.57, 2022 -0.24 vs -0.39, 2020 +0.36
+  vs +0.90. Paired Sharpe diff CI [-0.13, 0.26], P>0 0.71. Still not adopted.
+- Earnings: reaction days 1.6% of held days, +0.62% vs +0.11% other days, 5.8% of variance (logged earlier: ~8%).
+  Skip reaction days (ignores exit/re-entry costs): CAGR 0.210 vs 0.232, Sharpe 0.66 vs 0.70; half size between.
   `data_cache/earnings.csv` had an old column format that the script could not read; it was re-fetched.
-- QQQ trend: 200d unchanged (CAGR 0.133, Sharpe 0.72, MaxDD -0.26, 61 switches), alpha +2.2%/yr t=0.82. 150d Sharpe
-  0.75, t=1.12; 100d 0.54.
+- QQQ trend: 200d CAGR 0.133, Sharpe 0.72, MaxDD -0.26, 61 switches, alpha +2.0%/yr t=0.75. 150d Sharpe 0.75,
+  t=1.05; 100d 0.54.
 - Distribution days: unchanged (dist<5 CAGR 0.052, Sharpe 0.43, 203 switches; with trend 0.30; 4 / 6: 0.05 / 0.59).
-- Walk-forward PIT, 48 combos, OOS 2017-01..2026-11-25: Sharpe 0.85 vs default 0.60, EW universe 0.67, QQQ 0.76; CAGR
-  0.316 vs QQQ 0.188; MaxDD -0.50 vs QQQ -0.35; beats 47 of 48 fixed combos. This is above QQQ, but the grid was
-  widened after seeing results, the earlier static-universe walk-forward showed no gain, and no significance test was
-  run. Not adopted; the "OOS 0.75" in the key results above is an older figure.
-- Not recomputed (no current script, or not re-run): rebalance frequency, 63/0/8 full-sample / bootstrap / risk-rule
-  results, static universe, hardware-cap variants, kill-switch re-arm studies.
+- Parameter plateau: default 0.70, neighbours 189/8 0.68, 252/6 0.74, 252/10 0.67 -> PLATEAU; grid 0.60-0.96, median
+  0.76; the 63 row is 0.88-0.96.
+- Walk-forward, 48 combos, OOS 2017-01..2026-11-25. PIT: Sharpe 0.87 vs default 0.63, EW 0.69, QQQ 0.77; CAGR 0.323
+  vs QQQ 0.193; MaxDD -0.50 vs -0.35; beats 47 of 48 fixed combos. Static: 0.82 vs default 0.82, beats 8 of 48. Above
+  QQQ on PIT, but the grid was widened after seeing results, static shows no gain, and no significance test was run.
+  Not adopted; the "OOS 0.75" in the key results above is an older figure.
+- Not re-run (no current script): rebalance frequency, 63/0/8 full-sample / bootstrap / risk-rule results,
+  hardware-cap variants, kill-switch re-arm studies.
 
 ## Variants ledger (lower bound; early exploratory runs were not logged)
 
