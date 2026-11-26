@@ -104,18 +104,21 @@ Current files:
 ## Status (2026-11-26)
 
 Steps 1-5 done; step 6 started: both paper runners are set up and dry-run tested on the user's Mac
-(2026-11-25); no orders submitted yet. Repo: github.com/karimitaniii/claude-trader (private, `main`). 73 tests pass.
+(2026-11-25); no orders submitted yet. Repo: github.com/karimitaniii/claude-trader (private, `main`). 75 tests pass.
 
-Key results (costs on, PIT universe, 2014-02..2026-11; numbers and reasoning in `DECISIONS.md`):
-- $100k becomes: momentum no risk layer $1.51M (CAGR 23.6%, MaxDD -56%); momentum + risk re-armed $1.09M;
-  QQQ buy-and-hold $818k (CAGR 17.9%, MaxDD -35%); QQQ 200d trend $493k (MaxDD -26%); momentum with the live
-  hard-stop kill switch $543k (it sits in cash after the 2021 kill until a human resets it).
-- Excess Sharpe: QQQ 0.78 > momentum + risk re-armed 0.73 > QQQ trend 0.72 > momentum 0.71. No evidence of edge
-  beyond leveraged QQQ (alpha t=0.38, beta 1.43). Cost stress (5-40 bps slippage), full Nasdaq-100 universe,
-  vol scaling and a distribution-day filter do not change that.
+Key results (costs on, PIT universe, 2014-02-03..2026-11-25, recomputed 2026-11-26 on the current data; numbers and
+reasoning in `DECISIONS.md`). The data end matters: the same momentum rule gave 0.72 / CAGR 0.244 with data ending
+2026-11-23; two more days (-18% for momentum) moved it to the figures below.
+- $100k becomes: momentum no risk layer $1.32M (CAGR 22.3%, MaxDD -59%); momentum + risk re-armed $1.09M
+  (CAGR 20.5%, MaxDD -45%); QQQ buy-and-hold $783k (CAGR 17.5%, MaxDD -35%); QQQ 200d trend $493k (CAGR 13.3%,
+  MaxDD -26%); momentum with the live hard-stop kill switch $543k (in cash after the 2021 kill until a human resets it).
+- Excess Sharpe: QQQ 0.76 > momentum + risk re-armed 0.73 > QQQ trend 0.72 > momentum 0.68. No evidence of edge
+  beyond leveraged QQQ. The alpha t-stat (0.38 on the 11-23 cut), cost stress, Nasdaq-100 universe, vol scaling and
+  distribution-day results are NOT yet recomputed on this data end.
 - About 80 variants tried and none reached t > 3 (ledger in `DECISIONS.md`): be skeptical of any new in-sample win.
-- Recent: momentum's equity peaked near $3.2M in mid-2026 and has since fallen by more than half; QQQ is below
-  its 200d average (the trend strategy is in cash; momentum's next buys are semis, optics and storage).
+- Recent: momentum's equity peaked at $3.25M on 2026-06-22 and was 59% below that on 2026-11-25. QQQ is below
+  its 200d average (the trend strategy is in cash). Momentum's last two days were -9.1% and -10.7%, and its 11-23
+  move was +15.6% (NVDA +31.5% that day); those single-day moves have not been checked against a second source.
 
 Paper trading setup (done 2026-11-25):
 - Two Alpaca paper accounts, because an account holds one set of positions and one equity (strategies cannot share
@@ -142,8 +145,9 @@ Next:
   `python compare.py` weekly; read its output together once there are fills.
 - Done (PR #9): `RUNBOOK.md`; parameter plateau check (`analysis/param_plateau.py`). Result: 252/21/8 = 0.68,
   neighbours 0.65-0.72, rule says PLATEAU; lookback matters more than top_n (63 row 0.86-0.94).
-- Open before trusting the numbers: CLAUDE.md/DECISIONS.md momentum 0.71 and QQQ 0.78 do not reproduce; the code
-  gives 0.68 and 0.76 (`analysis/common.py`, same sample). Find the cause, then fix the stale figure.
+- Resolved: the 0.71 / 0.78 figures came from data ending 2026-11-23; the cache refresh on 2026-11-25 changed the
+  end date. Current figures (data through 2026-11-25) are in the Status section. Still open: recompute alpha, cost
+  stress, universe and vol-scaling results on the current data; check the 11-23 single-day moves against a second source.
 - Known small items, not fixed: `live.py` sizes on the previous close with up to 100% gross (a margin account makes
   an entry rejection unlikely); `report.py` "today's picks" ignores the live kill-switch state; `trend_live.py`
   redirects `live.LOG_DIR` while it runs; `analysis/earnings.py` skips names silently on download errors and never

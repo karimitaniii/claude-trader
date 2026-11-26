@@ -16,7 +16,12 @@ Adopted 2026-11-25 after the QQQ-trend timing bug and ~80 variants tried (ledger
    after costs out of sample or in paper trading. With this many looks, in-sample t-stats near 2 are expected by
    chance; a common factor-research rule of thumb is t > 3.
 
-Key results (costs on, PIT universe, 2014+): momentum CAGR 0.244, excess Sharpe 0.72, MaxDD -0.57;
+Data-cut note (2026-11-26): the figures below were computed on price data ending 2026-11-23. The paper runner's
+`refresh=True` rewrote the PIT price cache on 2026-11-25, so the same code on data ending 2026-11-25 gives momentum
+CAGR 0.223, excess Sharpe 0.68, MaxDD -0.59; QQQ CAGR 0.175, Sharpe 0.76, MaxDD -0.35 (`analysis/common.py`). Momentum
+fell ~18% in its last two days (-9.1%, -10.7%). The 2026-11-23 figures are kept as an earlier cut; the unrecomputed
+entries below (alpha, cost stress, universe, vol scaling, edge test) still refer to the 11-23 cut.
+Key results on the 11-23 cut (costs on, PIT universe, 2014+): momentum CAGR 0.244, excess Sharpe 0.72, MaxDD -0.57;
 QQQ excess Sharpe 0.79; equal-weight universe about as good as momentum. Walk-forward OOS 0.75.
 With all risk defaults + hard-stop kill switch: CAGR 0.14, MaxDD -0.27 (one kill, 2021-05, then cash).
 That -0.27 is not a realistic expectation: it sits in cash after 2021 because nobody resets it. With all
@@ -120,8 +125,8 @@ original -3 pt figure, which included them.
   is the best row, which the earlier 63/0/8 result already flagged (hindsight, not adopted). Diagnostic only: no
   parameter change. QQQ 0.76 on the same sample.
   Reproduction note: the default here is 0.68 and QQQ 0.76, but the 2026-11-26 status lines above say momentum 0.71 and
-  QQQ 0.78. `analysis/common.py` gives the same 0.677 / 0.761 on the same sample. The cause of the gap is not known; treat the
-  0.71 / 0.78 figures as unverified until re-run.
+  QQQ 0.78. `analysis/common.py` gives the same 0.677 / 0.761 on the same sample. Cause found (2026-11-26): the data end, see the
+  data-cut note above; on the 11-23 cut the same code gives 0.723 / 0.785.
 
 ## Variants ledger (lower bound; early exploratory runs were not logged)
 
