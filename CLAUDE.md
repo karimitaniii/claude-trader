@@ -136,12 +136,14 @@ Working conventions (how this project has been run):
 - Before a new experiment follow the checklist at the top of `DECISIONS.md` and add it to the variants ledger.
 
 Next:
-- 2026-12-01 (Tuesday, the next rebalance): before ~15:35 ET run both dry runs, check the planned orders with the
-  user, then `--submit` on both (market-on-close cutoff ~15:50 ET). The user decided NOT to submit before then.
-  After that run both daily and `python compare.py` weekly; read its output together once there are fills.
-- Pending work for the next session: (1) write `RUNBOOK.md` (daily steps, cutoff time, what each log line means,
-  kill-switch and error handling, weekly compare); (2) a parameter plateau chart (lookback x top_n heat map of
-  excess Sharpe, reusing the walk-forward grid) to see whether 252/21/8 sits on a plateau or a spike.
+- 2026-12-01 (Tuesday, the next rebalance): run both dry runs from about 15:00 ET, check the planned orders with the
+  user, then `--submit` on both by 15:35 ET (target). `can_submit_moc` refuses after 15:45 ET (15 min before close).
+  The user decided NOT to submit before then. Procedure: `RUNBOOK.md`. After that run both daily and
+  `python compare.py` weekly; read its output together once there are fills.
+- Done (PR #9): `RUNBOOK.md`; parameter plateau check (`analysis/param_plateau.py`). Result: 252/21/8 = 0.68,
+  neighbours 0.65-0.72, rule says PLATEAU; lookback matters more than top_n (63 row 0.86-0.94).
+- Open before trusting the numbers: CLAUDE.md/DECISIONS.md momentum 0.71 and QQQ 0.78 do not reproduce; the code
+  gives 0.68 and 0.76 (`analysis/common.py`, same sample). Find the cause, then fix the stale figure.
 - Known small items, not fixed: `live.py` sizes on the previous close with up to 100% gross (a margin account makes
   an entry rejection unlikely); `report.py` "today's picks" ignores the live kill-switch state; `trend_live.py`
   redirects `live.LOG_DIR` while it runs; `analysis/earnings.py` skips names silently on download errors and never
