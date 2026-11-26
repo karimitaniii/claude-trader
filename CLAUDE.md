@@ -99,29 +99,53 @@ Current files:
    improves out-of-sample results over the baseline. Log LLM outputs live to avoid
    training-data look-ahead bias in evaluation.
 
-## Status (2026-11-25)
+## Status (2026-11-26)
 
-Steps 1-5 done; step 6 tooling done (`compare.py`), no paper orders submitted yet. Repo:
-github.com/karimitaniii/claude-trader (private, `main`). 73 tests pass.
+Steps 1-5 done; step 6 started: both paper runners are set up and dry-run tested on the user's Mac
+(2026-11-25); no orders submitted yet. Repo: github.com/karimitaniii/claude-trader (private, `main`). 73 tests pass.
 
-Key results (costs on, PIT universe, 2014+): momentum excess Sharpe 0.72 vs QQQ 0.79, MaxDD -0.57; no
-evidence of edge beyond leveraged QQQ (alpha t=0.34). Full numbers and reasoning: `DECISIONS.md`.
+Key results (costs on, PIT universe, 2014-02..2026-11; numbers and reasoning in `DECISIONS.md`):
+- $100k becomes: momentum no risk layer $1.51M (CAGR 23.6%, MaxDD -56%); momentum + risk re-armed $1.09M;
+  QQQ buy-and-hold $818k (CAGR 17.9%, MaxDD -35%); QQQ 200d trend $493k (MaxDD -26%); momentum with the live
+  hard-stop kill switch $543k (it sits in cash after the 2021 kill until a human resets it).
+- Excess Sharpe: QQQ 0.78 > momentum + risk re-armed 0.73 > QQQ trend 0.72 > momentum 0.71. No evidence of edge
+  beyond leveraged QQQ (alpha t=0.38, beta 1.43). Cost stress (5-40 bps slippage), full Nasdaq-100 universe,
+  vol scaling and a distribution-day filter do not change that.
+- About 80 variants tried and none reached t > 3 (ledger in `DECISIONS.md`): be skeptical of any new in-sample win.
+- Recent: momentum's equity peaked near $3.2M in mid-2026 and has since fallen by more than half; QQQ is below
+  its 200d average (the trend strategy is in cash; momentum's next buys are semis, optics and storage).
 
-Decisions in force (details and why in `DECISIONS.md`):
-- Free hybrid PIT data, tech-like NDX members; ~10% of member history missing.
-- Untuned defaults 252/21/8, monthly rebalance (weekly ~= monthly, daily worse); revisit after paper results.
-- Risk: 15% position, 50% semis, 35% hardware caps; hard-stop kill switch (25%) with manual reset.
-- Hold through earnings. Volatility scaling and shorter lookback (63/0/8) tested, not adopted.
-- Market-on-close whole-share orders; `KNOWN_NO_DATA` tickers skipped to keep runs quiet.
+Paper trading setup (done 2026-11-25):
+- Two Alpaca paper accounts, because an account holds one set of positions and one equity (strategies cannot share
+  one): momentum via `live.py` (`ALPACA_API_KEY/SECRET_KEY`), QQQ trend via `trend_live.py`
+  (`ALPACA_TREND_API_KEY/SECRET_KEY`). The account numbers differ (verified). Both dry runs worked: momentum plans
+  8 orders (85% gross after the hardware cap), trend plans none (QQQ below its 200d average).
+- The user's Mac: repo at `~/Desktop/Claude Trader`, `.venv` (Python 3.11.9), keys in `~/.alpaca_paper_env` (outside
+  the repo, chmod 600). Before each run: `source .venv/bin/activate && source ~/.alpaca_paper_env`. Cloud sessions
+  cannot see the Mac (no keys, no files, the folder is not offered to cloud sessions): the user runs the runners
+  and pastes output with key values removed. Give macOS zsh commands, each in its own code block.
+
+Working conventions (how this project has been run):
+- Cloud session develops on the branch it is given, opens a draft PR, and the user says "review and merge". Review
+  means re-reading the diff critically, running the tests, and fixing real findings (several found so far, including a
+  1-bar look-ahead in the first QQQ trend baseline). Never merge unasked; unsubscribe from the PR after merging.
+- The cloud environment `claude-trader` allows only Yahoo Finance hosts (yfinance works; docs.alpaca.markets and
+  most other sites are blocked). GitHub only through `gh api` REST calls. Retry on temporary GitHub 503s.
+- Before a new experiment follow the checklist at the top of `DECISIONS.md` and add it to the variants ledger.
 
 Next:
-- Recommended: wait for the 2026-12-01 rebalance before the first `live.py --submit` (current signal is
-  stale and all-semis/storage; a shadow run from 2026-11-03 lost ~17%). User has not decided.
-- Also create a second Alpaca paper account for `trend_live.py` (QQQ 200d trend baseline); run both daily and
-  compare live with `python compare.py` (weekly).
-- Then run `live.py` every trading day (no schedule yet; launchd only if asked), `compare.py` weekly.
-- Open questions: Step 7 only after
-  weeks-months of paper results.
+- 2026-12-01 (Tuesday, the next rebalance): before ~15:35 ET run both dry runs, check the planned orders with the
+  user, then `--submit` on both (market-on-close cutoff ~15:50 ET). The user decided NOT to submit before then.
+  After that run both daily and `python compare.py` weekly; read its output together once there are fills.
+- Pending work for the next session: (1) write `RUNBOOK.md` (daily steps, cutoff time, what each log line means,
+  kill-switch and error handling, weekly compare); (2) a parameter plateau chart (lookback x top_n heat map of
+  excess Sharpe, reusing the walk-forward grid) to see whether 252/21/8 sits on a plateau or a spike.
+- Known small items, not fixed: `live.py` sizes on the previous close with up to 100% gross (a margin account makes
+  an entry rejection unlikely); `report.py` "today's picks" ignores the live kill-switch state; `trend_live.py`
+  redirects `live.LOG_DIR` while it runs; `analysis/earnings.py` skips names silently on download errors and never
+  refreshes its cache; `compare.py` shadow uses cached prices (live.py refreshes the same cache daily).
+- Open question: Step 7 (LLM layer) only after weeks to months of paper results. Idea for then: free SEC EDGAR
+  8-K / 10-Q feeds as data inputs, with LLM outputs logged live to avoid training-data look-ahead.
 
 ## Style
 
