@@ -69,3 +69,5 @@ def test_unpriced_members_flags_missing_and_stale_prices_only_for_members(monkey
     monkeypatch.setattr(universe, "load_sector_map", lambda: None)
     monkeypatch.setattr(data, "load_prices", lambda tickers: raw)
     assert universe.unpriced_members(list(days)) == ["GONE", "STALE"]
+    # any symbol, member or not: LEFT has no price column at all
+    assert universe.unpriced_symbols(["OK", "STALE", "LEFT"], days[1]) == ["LEFT", "STALE"]

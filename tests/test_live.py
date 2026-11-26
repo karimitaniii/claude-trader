@@ -92,6 +92,7 @@ def fake_market(monkeypatch, n=400, crash=False):
     bench = pd.DataFrame({"QQQ": np.linspace(100, 200, n)}, index=idx)
     monkeypatch.setattr(live, "load_universe", lambda kind, refresh: (close, eligible))
     monkeypatch.setattr(live, "unpriced_members", lambda days: [])
+    monkeypatch.setattr(live, "unpriced_symbols", lambda symbols, day: [])
     monkeypatch.setattr(live, "load_prices", lambda tickers, refresh: bench)
     monkeypatch.setattr(live, "symbol_groups", lambda syms: pd.Series("software", index=list(syms)))
     monkeypatch.setattr(live, "PARAMS", {"top_n": 3, "lookback": 126, "skip": 21})
@@ -153,6 +154,17 @@ def test_unpriced_member_aborts_without_orders(monkeypatch):
     assert b.submitted == []
     assert any(e["kind"] == "alert" and "no price" in e["message"] for e in events(live.LOG_DIR))
     assert json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None  # a re-run can still rebalance
+
+
+def test_unpriced_target_aborts_without_orders(monkeypatch):
+    fake_market(monkeypatch)
+    # every target lacks a real price on the last bar, e.g. it left the index after the signal day
+    monkeypatch.setattr(live, "unpriced_symbols", lambda symbols, day: sorted(symbols))
+    b = PaperSimBroker()
+    live.run(b, submit=True, now=datetime(2026, 11, 24, 12, 0, tzinfo=live.ET))
+    assert b.submitted == []
+    assert any(e["kind"] == "alert" and "for target" in e["message"] for e in events(live.LOG_DIR))
+    assert json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None
 
 
 def test_no_prior_month_data_aborts_without_orders(monkeypatch):

@@ -110,8 +110,12 @@ kinds are also printed to the terminal (stderr).
   work around the check.
 - **`last bar <date> but the previous session was <date>; aborting`**: the data source has not delivered the
   previous trading day yet. Wait a few minutes and re-run.
-- A momentum order that is accepted but later ends unfilled is **not retried**: the month already counts as
-  rebalanced. Check the alert and the Alpaca dashboard.
+- **`no price for target [...] on <date>`**: a stock the strategy wants to hold has no price on the latest bar,
+  possibly because it left the index and stopped trading. Nothing is sent. Re-run the dry run. If it persists, stop
+  and investigate; do not work around the check.
+- If **every** order in a momentum batch was accepted, an order that later ends unfilled is **not retried**: the
+  month already counts as rebalanced. If any submission failed, the month is not recorded, so a later run can plan
+  accepted orders that went unfilled again. In both cases check the alert and the Alpaca dashboard.
 - **`no valid signal on <date>`**: the month-end signal could not be computed. No orders are placed. Investigate
   before the next rebalance.
 - **`not submitting: ...`**: the cutoff passed or the market is closed. Nothing was sent. Run `--submit` the

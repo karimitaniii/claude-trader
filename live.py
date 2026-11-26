@@ -34,7 +34,7 @@ from broker import AlpacaPaperBroker, Broker, OrderRequest, PaperSimBroker
 from data import BENCHMARK, load_prices
 from risk import KillSwitch, RiskLimits, apply_limits, trend_ok
 from signals import targets_from_signal_day
-from universe import load_universe, symbol_groups, unpriced_members
+from universe import load_universe, symbol_groups, unpriced_members, unpriced_symbols
 
 ROOT = Path(__file__).parent
 STATE_FILE = ROOT / "state" / "live_state.json"
@@ -229,6 +229,10 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         log_event("signal", signal_day=signal_day.date(), targets={s: round(w, 4) for s, w in raw[raw > 0].items()})
         log_event("risk", fired=fired, gross=round(float(allowed.sum()), 4),
                   targets={s: round(w, 4) for s, w in allowed[allowed > 0].items()})
+        stale = unpriced_symbols(list(allowed[allowed > 0].index), last_bar)
+        if stale:
+            log_event("alert", message=f"no price for target {stale} on {last_bar.date()}; aborting")
+            return
         orders = plan_orders(allowed, positions, stocks.loc[last_bar], equity, tag)
         if submit_all(broker, orders, submit) and submit:
             state["last_rebalance_month"] = month

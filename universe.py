@@ -166,6 +166,19 @@ def unpriced_members(days: list[pd.Timestamp]) -> list[str]:
     return sorted(set(bad[bad].index) - KNOWN_NO_DATA)
 
 
+def unpriced_symbols(symbols: list[str], day: pd.Timestamp) -> list[str]:
+    """Those of `symbols` with no real (not forward-filled) price on `day`, member or not, from the price cache.
+
+    A name that left the index after the signal day can still be a target; `unpriced_members` does not see it.
+    """
+    from data import load_prices
+
+    tech = tech_intervals(load_membership(), load_sector_map())
+    raw = load_prices(sorted(tech["symbol"].unique()))
+    priced = raw.reindex(index=[day], columns=symbols).notna().iloc[0]
+    return sorted(s for s in symbols if not priced[s])
+
+
 def coverage_report(members: pd.DataFrame, close: pd.DataFrame) -> pd.DataFrame:
     """Per symbol: member-days, member-days with a price, and the share missing."""
     has_price = close.reindex(index=members.index, columns=members.columns).notna()
