@@ -53,3 +53,19 @@ def test_coverage_report_counts_missing_member_days():
     rep = coverage_report(members, close)
     assert rep.loc["A", "missing_share"] == pytest.approx(0.25)
     assert rep.loc["B", "missing_share"] == pytest.approx(1.0)
+
+
+def test_unpriced_members_flags_missing_and_stale_prices_only_for_members(monkeypatch):
+    import data
+    import universe
+
+    days = pd.to_datetime(["2026-10-30", "2026-11-25"])
+    intervals = pd.DataFrame({"ticker": ["OK", "GONE", "STALE", "LEFT"], "symbol": ["OK", "GONE", "STALE", "LEFT"],
+                              "start": pd.Timestamp("2020-01-01"),
+                              "end": [pd.NaT, pd.NaT, pd.NaT, pd.Timestamp("2021-01-01")]})
+    raw = pd.DataFrame({"OK": [1.0, 1.0], "GONE": [float("nan")] * 2, "STALE": [1.0, float("nan")]}, index=days)
+    monkeypatch.setattr(universe, "tech_intervals", lambda *a, **k: intervals)
+    monkeypatch.setattr(universe, "load_membership", lambda: None)
+    monkeypatch.setattr(universe, "load_sector_map", lambda: None)
+    monkeypatch.setattr(data, "load_prices", lambda tickers: raw)
+    assert universe.unpriced_members(list(days)) == ["GONE", "STALE"]

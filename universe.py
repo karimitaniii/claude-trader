@@ -150,6 +150,22 @@ def load_universe(kind: str = "pit", refresh: bool = False) -> tuple[pd.DataFram
     return close.ffill(), members.reindex(columns=close.columns, fill_value=False)
 
 
+def unpriced_members(days: list[pd.Timestamp]) -> list[str]:
+    """Tech-like members with no real (not forward-filled) price on any of `days`, from the price cache.
+
+    A failed or stale download otherwise looks like valid data: the name silently drops out of the ranking or is
+    sized on an old price. Reads the cache `load_universe("pit", refresh=True)` has just written.
+    """
+    from data import KNOWN_NO_DATA, load_prices
+
+    tech = tech_intervals(load_membership(), load_sector_map())
+    raw = load_prices(sorted(tech["symbol"].unique()))
+    members = membership_matrix(tech, pd.DatetimeIndex(days))
+    priced = raw.reindex(index=members.index, columns=members.columns).notna()
+    bad = (members & ~priced).any()
+    return sorted(set(bad[bad].index) - KNOWN_NO_DATA)
+
+
 def coverage_report(members: pd.DataFrame, close: pd.DataFrame) -> pd.DataFrame:
     """Per symbol: member-days, member-days with a price, and the share missing."""
     has_price = close.reindex(index=members.index, columns=members.columns).notna()

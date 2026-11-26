@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Protocol
 
 PAPER_URL_FRAGMENT = "paper-api.alpaca.markets"
@@ -27,6 +28,7 @@ class Broker(Protocol):
     def submit_market_on_close(self, order: OrderRequest) -> dict: ...
     def orders_since(self, iso_date: str) -> list[dict]: ...
     def can_submit_moc(self) -> tuple[bool, str]: ...
+    def previous_session(self, today: date) -> date | None: ...
 
 
 class AlpacaPaperBroker:
@@ -76,6 +78,13 @@ class AlpacaPaperBroker:
             return False, f"only {minutes_left:.0f} min to close: past the closing-auction cutoff"
         return True, f"{minutes_left:.0f} min to close"
 
+    def previous_session(self, today: date) -> date | None:
+        """Last trading day before `today` on the exchange calendar."""
+        from alpaca.trading.requests import GetCalendarRequest
+
+        days = self._client.get_calendar(GetCalendarRequest(start=today - timedelta(days=14), end=today))
+        return max((d.date for d in days if d.date < today), default=None)
+
     def orders_since(self, iso_date: str) -> list[dict]:
         from datetime import datetime
 
@@ -121,3 +130,6 @@ class PaperSimBroker:
 
     def can_submit_moc(self) -> tuple[bool, str]:
         return True, "offline simulation"
+
+    def previous_session(self, today: date) -> date | None:
+        return None  # no exchange calendar offline
