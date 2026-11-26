@@ -125,6 +125,8 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         if state.get("last_submit_day") == today.date().isoformat():
             log_event("no_orders", message="already submitted today; the order fills at the close")
             return
+        if live.missing_last_session(broker, today, last_bar):
+            return
         orders = plan_trend_orders(want_on, positions, float(bench.iloc[-1]), equity, tag)
         log_event("signal", signal_day=last_bar.date(), invested=want_on, held=positions.get(BENCHMARK, 0.0) > 0)
         if live.submit_all(broker, orders, submit) and submit and orders:

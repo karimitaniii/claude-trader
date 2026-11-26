@@ -34,7 +34,7 @@ from broker import AlpacaPaperBroker, Broker, OrderRequest, PaperSimBroker
 from data import BENCHMARK, load_prices
 from risk import KillSwitch, RiskLimits, apply_limits, trend_ok
 from signals import targets_from_signal_day
-from universe import load_universe, symbol_groups
+from universe import load_universe, symbol_groups, unpriced_members
 
 ROOT = Path(__file__).parent
 STATE_FILE = ROOT / "state" / "live_state.json"
@@ -138,6 +138,15 @@ def log_order_updates(broker: Broker, state: dict, today: pd.Timestamp) -> None:
     state["logged_orders"] = state["logged_orders"][-1000:]
 
 
+def missing_last_session(broker: Broker, today: pd.Timestamp, last_bar: pd.Timestamp) -> bool:
+    """Alert if the newest price bar is older than the previous trading session (the signal would be out of date)."""
+    expected = broker.previous_session(today.date())
+    if expected is None or last_bar.date() >= expected:
+        return False
+    log_event("alert", message=f"last bar {last_bar.date()} but the previous session was {expected}; aborting")
+    return True
+
+
 def submit_all(broker: Broker, orders: list[OrderRequest], submit: bool) -> bool:
     if not orders:
         log_event("no_orders")
@@ -201,7 +210,14 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         if state.get("last_rebalance_month") == month:
             log_event("no_rebalance", message=f"already rebalanced for {month}")
             return
+        if missing_last_session(broker, today, last_bar):
+            return
         signal_day = previous_month_end(stocks.index, today)
+        unpriced = unpriced_members([signal_day, last_bar])
+        if unpriced:
+            log_event("alert", message=f"no price for {unpriced} on {signal_day.date()} or {last_bar.date()}; "
+                      "aborting, re-run to download again")
+            return
         raw = targets_from_signal_day(stocks, signal_day, eligible=eligible, **PARAMS)
         if raw is None:
             log_event("alert", message=f"no valid signal on {signal_day.date()}")

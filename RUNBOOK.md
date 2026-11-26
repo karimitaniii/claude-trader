@@ -105,6 +105,13 @@ kinds are also printed to the terminal (stderr).
 
 - **`stale data: last bar <date>; aborting`**: the price data is more than 5 days old. The run stops without
   trading. Re-run later, and check that the market data source is up.
+- **`no price for [...] on <date> or <date>; aborting`**: a current member's price is missing (usually a failed
+  download). Nothing is sent. Re-run the dry run. If the same name keeps failing, stop and investigate; do not
+  work around the check.
+- **`last bar <date> but the previous session was <date>; aborting`**: the data source has not delivered the
+  previous trading day yet. Wait a few minutes and re-run.
+- A momentum order that is accepted but later ends unfilled is **not retried**: the month already counts as
+  rebalanced. Check the alert and the Alpaca dashboard.
 - **`no valid signal on <date>`**: the month-end signal could not be computed. No orders are placed. Investigate
   before the next rebalance.
 - **`not submitting: ...`**: the cutoff passed or the market is closed. Nothing was sent. Run `--submit` the
