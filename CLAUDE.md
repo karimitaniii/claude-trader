@@ -51,6 +51,8 @@ Current files:
   After a kill-switch alert: review, then `python live.py --reset-kill-switch`.
 - Walk-forward: `python walkforward.py` (writes `walkforward_oos.png`)
 - Tests: `python -m pytest`
+- Daily paper steps, cutoff, log lines, kill-switch reset, weekly compare: `RUNBOOK.md`
+- Parameter plateau heat map: `python -m analysis.param_plateau` (writes `report/param_plateau_pit.png`)
 - Refresh data: call `load_prices(..., refresh=True)`; refresh membership: `universe.refresh_membership()`
   (bump `SOURCE_COMMIT` first; any new ticker must be classified in `ndx_sector_map.csv` or loading fails)
 

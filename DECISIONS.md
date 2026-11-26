@@ -112,6 +112,17 @@ original -3 pt figure, which included them.
   timing shifts with equity, so read its cost sensitivity loosely. Real slippage is unknown until paper fills
   (`compare.py`); mid-size picks (SNDK, LITE, ...) likely sit at 10-20 bps, not 5.
 
+- Parameter plateau (2026-11-26, `analysis/param_plateau.py`, pre-registered before running: 4x4 walk-forward grid with
+  skip 21, PIT, 2014-02..2026-11, costs on, full-sample excess Sharpe; plateau = every grid neighbour of 252/8 within
+  0.10 Sharpe). Default 252/21/8 = 0.68, neighbours 189/8 0.66, 252/6 0.72, 252/10 0.65 -> PLATEAU by the rule. Grid
+  0.58-0.94, median 0.74. The plateau is in top_n; lookback moves Sharpe much more: 63 is 0.86-0.94 across all top_n,
+  189 is 0.58-0.66. So 252 is locally stable but sits in the weaker half of the lookback axis, and a 63-day lookback
+  is the best row, which the earlier 63/0/8 result already flagged (hindsight, not adopted). Diagnostic only: no
+  parameter change. QQQ 0.76 on the same sample.
+  Reproduction note: the default here is 0.68 and QQQ 0.76, but the 2026-11-26 status lines above say momentum 0.71 and
+  QQQ 0.78. `analysis/common.py` gives the same 0.677 / 0.761 on the same sample, so the earlier numbers came from an
+  earlier data state or run. Not reconciled yet; treat the 0.71 / 0.78 figures as unverified until re-run.
+
 ## Variants ledger (lower bound; early exploratory runs were not logged)
 
 | Family | Variants tried |
@@ -126,6 +137,7 @@ original -3 pt figure, which included them.
 | Volatility scaling (target 25%) | 1 |
 | QQQ trend windows (100 / 150 / 200d) | 3 |
 | Distribution-day thresholds (4 / 5 / 6) | 3 |
+| Parameter plateau check (existing 4x4 grid, no new values, diagnostic only) | 0 new |
 | **Total** | **~80** |
 
 Best in-sample alpha t-stat among them: 1.85 (63/0/8 lookback, a hindsight pick). None reached 3. With ~80 looks,
