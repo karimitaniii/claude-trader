@@ -146,6 +146,9 @@ strategies:
 python compare.py --strategy both
 ```
 
+Today's price is never cached, so a fill from today shows no close (NaN slippage) until a later daily run
+refreshes the prices.
+
 Read the output together. Early on, there are few fills, so expect little signal from one week. Use the
 `--strategy momentum` or `--strategy trend` flags to look at one strategy at a time.
 

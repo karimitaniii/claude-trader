@@ -10,7 +10,7 @@ Data ingestion -> signal engine -> strategy -> risk checks -> order execution ->
 
 Current files:
 - `data.py`      download and cache adjusted daily closes (yfinance -> `data_cache/close_<hash>.csv`, keyed by
-                 ticker set; empty columns retried) and the 13w T-bill rate (`data_cache/irx.csv`)
+                 ticker set; empty columns retried; today's unfinished bar never cached) and the 13w T-bill rate (`data_cache/irx.csv`)
 - `universe.py`  point-in-time Nasdaq-100 membership (jmccarrell/n100tickers, pinned commit) filtered to
                  tech-like names via `universe_data/ndx_sector_map.csv`; `load_universe("pit"|"all"|"static")` ("all" = every sector, comparison only)
 - `signals.py`   12-1 momentum -> monthly equal-weight top-N target weights (shifted 1 bar), only names
@@ -104,23 +104,24 @@ Current files:
 ## Status (2026-11-26)
 
 Steps 1-5 done; step 6 started: both paper runners are set up and dry-run tested on the user's Mac
-(2026-11-25); no orders submitted yet. Repo: github.com/karimitaniii/claude-trader (private, `main`). 75 tests pass.
+(2026-11-25); no orders submitted yet. Repo: github.com/karimitaniii/claude-trader (private, `main`). 76 tests pass.
 
-Key results (costs on, PIT universe, 2014-02-03..2026-11-25, recomputed 2026-11-26 on the current data; numbers and
-reasoning in `DECISIONS.md`). The data end matters: the same momentum rule gave 0.72 / CAGR 0.244 with data ending
-2026-11-23; two more days (-18% for momentum) moved it to the figures below.
-- $100k becomes: momentum no risk layer $1.32M (CAGR 22.3%, MaxDD -59%); momentum + risk re-armed $1.09M
-  (CAGR 20.5%, MaxDD -45%); QQQ buy-and-hold $783k (CAGR 17.5%, MaxDD -35%); QQQ 200d trend $493k (CAGR 13.3%,
-  MaxDD -26%); momentum with the live hard-stop kill switch $543k (in cash after the 2021 kill until a human resets it).
-- Excess Sharpe: QQQ 0.76 > momentum + risk re-armed 0.73 > QQQ trend 0.72 > momentum 0.68. No evidence of edge
-  beyond leveraged QQQ (alpha t=0.27, beta 1.43). Cost stress (5-40 bps slippage), full Nasdaq-100 universe, vol
-  scaling and a distribution-day filter do not change that.
-- Walk-forward (48 combos, OOS 2017+) shows excess Sharpe 0.85 vs QQQ 0.76 and default 0.60, with MaxDD -50% vs
-  -35%. Grid widened after seeing results and no significance test: not adopted.
+Key results (costs on, PIT universe, 2014-02-03..2026-11-25, final closes, recomputed 2026-11-26; numbers and
+reasoning in `DECISIONS.md`):
+- $100k becomes: momentum no risk layer $1.45M (CAGR 23.2%, MaxDD -57%); momentum + risk re-armed $1.09M
+  (CAGR 20.5%, MaxDD -45%); QQQ buy-and-hold $813k (CAGR 17.8%, MaxDD -35%); QQQ 200d trend $493k (CAGR 13.3%,
+  MaxDD -26%); momentum with the live hard-stop kill switch CAGR 14.1% (in cash after the 2021 kill until a human
+  resets it).
+- Excess Sharpe: QQQ 0.78 > momentum + risk re-armed 0.73 > QQQ trend 0.72 > momentum 0.70; equal-weight universe
+  0.75. No evidence of edge beyond leveraged QQQ (alpha t=0.33, beta 1.43). Cost stress (5-40 bps slippage), full
+  Nasdaq-100 universe, vol scaling and a distribution-day filter do not change that.
+- Walk-forward (48 combos, OOS 2017+) shows excess Sharpe 0.87 vs QQQ 0.77 and default 0.63, with MaxDD -50% vs
+  -35%; on the static universe it adds nothing (0.82 vs default 0.82). Grid widened after seeing results and no
+  significance test: not adopted.
 - About 80 variants tried and none reached t > 3 (ledger in `DECISIONS.md`): be skeptical of any new in-sample win.
-- Recent: momentum's equity peaked at $3.25M on 2026-06-22 and was 59% below that on 2026-11-25. QQQ is below
-  its 200d average (the trend strategy is in cash). Momentum's last two days were -9.1% and -10.7%, and its 11-23
-  move was +15.6% (NVDA +31.5% that day); those single-day moves have not been checked against a second source.
+- Recent: momentum's equity peaked at $3.25M on 2026-06-22 and was 55% below that on 2026-11-25. QQQ is below
+  its 200d average (the trend strategy is in cash). The large 11-20..11-24 moves (e.g. NVDA +31.5% on 11-23) match
+  Alpaca's daily bars within 0.6 pts.
 
 Paper trading setup (done 2026-11-25):
 - Two Alpaca paper accounts, because an account holds one set of positions and one equity (strategies cannot share
@@ -145,11 +146,10 @@ Next:
   user, then `--submit` on both by 15:35 ET (target). `can_submit_moc` refuses after 15:45 ET (15 min before close).
   The user decided NOT to submit before then. Procedure: `RUNBOOK.md`. After that run both daily and
   `python compare.py` weekly; read its output together once there are fills.
-- Done (PR #9): `RUNBOOK.md`; parameter plateau check (`analysis/param_plateau.py`). Result: 252/21/8 = 0.68,
-  neighbours 0.65-0.72, rule says PLATEAU; lookback matters more than top_n (63 row 0.86-0.94).
-- Resolved: the 0.71 / 0.78 figures came from data ending 2026-11-23; the cache refresh on 2026-11-25 changed the
-  end date. Analysis results recomputed through 2026-11-25 (`DECISIONS.md`, "Recompute" section). Still open: check
-  the 11-23 single-day moves against a second source.
+- Done (PR #9): `RUNBOOK.md`; parameter plateau check (`analysis/param_plateau.py`). Result: 252/21/8 = 0.70,
+  neighbours 0.67-0.74, rule says PLATEAU; lookback matters more than top_n (63 row 0.88-0.96).
+- Fixed 2026-11-26: a midday `live.py` run had cached the unfinished 11-25 bar as a close, which distorted the
+  figures published that day (momentum 0.68). `load_prices` now never caches today's bar.
 - Known small items, not fixed: `live.py` sizes on the previous close with up to 100% gross (a margin account makes
   an entry rejection unlikely); `report.py` "today's picks" ignores the live kill-switch state; `trend_live.py`
   redirects `live.LOG_DIR` while it runs; `analysis/earnings.py` skips names silently on download errors and never

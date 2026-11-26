@@ -26,6 +26,13 @@ KNOWN_NO_DATA = frozenset(
 )
 
 
+def finished_bars(obj):
+    """Drop rows dated today (New York) or later: yfinance returns an unfinished bar during the session, and once
+    cached it would later pass for a close."""
+    today = pd.Timestamp.now(tz="America/New_York").normalize().tz_localize(None)
+    return obj.loc[obj.index < today]
+
+
 def price_cache_file(tickers, start, end) -> Path:
     """Cache path keyed by the ticker set and date range, so a new universe never reuses stale data."""
     key = hashlib.sha1(f"{sorted(set(tickers))}|{start}|{end}".encode()).hexdigest()[:10]
@@ -56,7 +63,7 @@ def load_prices(tickers, start="2013-01-01", end=None, refresh=False, retries: i
         time.sleep(2)
         again = yf.download(missing, start=start, end=end, auto_adjust=True, progress=False)["Close"]
         close[missing] = again.reindex(index=close.index, columns=missing)
-    close = close.dropna(how="all")
+    close = finished_bars(close.dropna(how="all"))
     close.to_csv(cache_file)
     return close
 
@@ -73,6 +80,6 @@ def load_risk_free(start: str = "2013-01-01", end=None, refresh: bool = False) -
         irx = pd.read_csv(cache_file, index_col=0, parse_dates=True).iloc[:, 0]
     else:
         raw = yf.download("^IRX", start=start, end=end, auto_adjust=True, progress=False)
-        irx = raw["Close"].squeeze().dropna().rename("IRX")
+        irx = finished_bars(raw["Close"].squeeze().dropna().rename("IRX"))
         irx.to_csv(cache_file)
     return irx / 100 / 252
