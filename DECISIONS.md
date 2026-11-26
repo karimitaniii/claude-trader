@@ -120,8 +120,8 @@ original -3 pt figure, which included them.
   is the best row, which the earlier 63/0/8 result already flagged (hindsight, not adopted). Diagnostic only: no
   parameter change. QQQ 0.76 on the same sample.
   Reproduction note: the default here is 0.68 and QQQ 0.76, but the 2026-11-26 status lines above say momentum 0.71 and
-  QQQ 0.78. `analysis/common.py` gives the same 0.677 / 0.761 on the same sample, so the earlier numbers came from an
-  earlier data state or run. Not reconciled yet; treat the 0.71 / 0.78 figures as unverified until re-run.
+  QQQ 0.78. `analysis/common.py` gives the same 0.677 / 0.761 on the same sample. The cause of the gap is not known; treat the
+  0.71 / 0.78 figures as unverified until re-run.
 
 ## Variants ledger (lower bound; early exploratory runs were not logged)
 

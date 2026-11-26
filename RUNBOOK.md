@@ -56,11 +56,11 @@ python trend_live.py --submit
    `logs/trend/`. Look at the last events of the day:
 
 ```bash
-tail -n 20 logs/$(date +%F).jsonl
+tail -n 20 logs/$(TZ=America/New_York date +%F).jsonl
 ```
 
 ```bash
-tail -n 20 logs/trend/$(date +%F).jsonl
+tail -n 20 logs/trend/$(TZ=America/New_York date +%F).jsonl
 ```
 
 On days with no rebalance, both runs normally log `no_rebalance` or `no_orders` and nothing else. That is expected.
