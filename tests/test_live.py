@@ -155,6 +155,16 @@ def test_unpriced_member_aborts_without_orders(monkeypatch):
     assert json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None  # a re-run can still rebalance
 
 
+def test_no_prior_month_data_aborts_without_orders(monkeypatch):
+    fake_market(monkeypatch)
+    monkeypatch.setattr(live, "previous_month_end", lambda index, today: None)
+    b = PaperSimBroker(positions={"A": 10.0})
+    live.run(b, submit=True, now=datetime(2026, 11, 24, 12, 0, tzinfo=live.ET))
+    assert b.submitted == []
+    assert any(e["kind"] == "alert" and "before this month" in e["message"] for e in events(live.LOG_DIR))
+    assert not any(e["kind"] == "error" for e in events(live.LOG_DIR))
+
+
 def test_missing_previous_session_aborts(monkeypatch):
     fake_market(monkeypatch)  # last bar 2026-11-24
     b = PaperSimBroker()

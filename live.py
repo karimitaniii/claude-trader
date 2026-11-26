@@ -213,6 +213,9 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         if missing_last_session(broker, today, last_bar):
             return
         signal_day = previous_month_end(stocks.index, today)
+        if signal_day is None:
+            log_event("alert", message="no price data before this month; aborting")
+            return
         unpriced = unpriced_members([signal_day, last_bar])
         if unpriced:
             log_event("alert", message=f"no price for {unpriced} on {signal_day.date()} or {last_bar.date()}; "
