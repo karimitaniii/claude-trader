@@ -113,7 +113,7 @@ Key results (costs on, PIT universe, 2014-02..2026-11; numbers and reasoning in 
   vol scaling and a distribution-day filter do not change that.
 - About 80 variants tried and none reached t > 3 (ledger in `DECISIONS.md`): be skeptical of any new in-sample win.
 - Recent: momentum's equity peaked near $3.2M in mid-2026 and has since fallen by more than half; QQQ is below
-  its 200d average (the trend strategy is in cash; momentum's next buys are all semis and storage).
+  its 200d average (the trend strategy is in cash; momentum's next buys are semis, optics and storage).
 
 Paper trading setup (done 2026-11-25):
 - Two Alpaca paper accounts, because an account holds one set of positions and one equity (strategies cannot share
