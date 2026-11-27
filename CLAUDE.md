@@ -25,9 +25,11 @@ Current files:
 - `live.py`      daily runner: fills -> fresh prices (today's partial bar dropped) -> kill switch ->
                  monthly targets from previous month-end close -> risk layer -> whole-share orders.
                  Dry run by default; `--submit` sends to paper. Logs: `logs/YYYY-MM-DD.jsonl`,
-                 state: `state/live_state.json` (`--offline` uses separate files)
+                 state: `state/live_state.json` (`--offline` uses separate files). Exits unless the broker's
+                 account number equals `ALPACA_ACCOUNT_NUMBER` (reset included)
 - `trend_live.py` second paper strategy for live comparison: hold QQQ while above its 200d average, else cash.
-                 Needs its OWN Alpaca paper account (`ALPACA_TREND_API_KEY/SECRET_KEY`); same kill switch;
+                 Needs its OWN Alpaca paper account (`ALPACA_TREND_API_KEY/SECRET_KEY`,
+                 `ALPACA_TREND_ACCOUNT_NUMBER`, same account check); same kill switch;
                  logs in `logs/trend/`, state in `state/trend_state.json`. Dry run by default, `--submit` sends
 - `compare.py`   step 6: live paper equity vs a shadow backtest of the same config from the first
                  live trade, fill slippage vs close, failed orders and alerts; covers momentum and the QQQ trend
@@ -44,9 +46,9 @@ Current files:
 
 - Setup: fresh venv (Python 3.10-3.11; vectorbt is picky about numpy/numba), `pip install -r requirements.txt`
 - Run backtest: `python backtest.py`
-- QQQ-trend paper strategy (second paper account): `export ALPACA_TREND_API_KEY=... ALPACA_TREND_SECRET_KEY=...`,
-  then `python trend_live.py` / `--submit`, daily, same time window as `live.py`
-- Paper trading: `export ALPACA_API_KEY=... ALPACA_SECRET_KEY=...` (paper keys), then
+- QQQ-trend paper strategy (second paper account): `export ALPACA_TREND_API_KEY=... ALPACA_TREND_SECRET_KEY=...
+  ALPACA_TREND_ACCOUNT_NUMBER=...`, then `python trend_live.py` / `--submit`, daily, same time window as `live.py`
+- Paper trading: `export ALPACA_API_KEY=... ALPACA_SECRET_KEY=... ALPACA_ACCOUNT_NUMBER=...` (paper keys), then
   `python live.py` (dry run) / `python live.py --submit`, once per trading day, before ~15:35 ET.
   After a kill-switch alert: review, then `python live.py --reset-kill-switch`.
 - Walk-forward: `python walkforward.py` (writes `walkforward_oos.png`)
@@ -101,10 +103,17 @@ Current files:
    improves out-of-sample results over the baseline. Log LLM outputs live to avoid
    training-data look-ahead bias in evaluation.
 
-## Status (2026-11-26)
+## Status (2026-11-27)
 
-Steps 1-5 done; step 6 started: both paper runners are set up and dry-run tested on the user's Mac
-(2026-11-25); no orders submitted yet. Repo: github.com/karimitaniii/claude-trader (private, `main`). 76 tests pass.
+Steps 1-5 done; step 6 started: both paper runners are set up and dry-run tested on the user's Mac; no orders
+submitted yet. Repo: github.com/karimitaniii/claude-trader (public on purpose, `main`: commit nothing sensitive).
+191 tests pass.
+
+- PR #19 (2026-11-27): runner hardening (kill switch runs before data downloads, atomic state saves, closing cutoff
+  checked per order, stale or short data aborts).
+- PR #20 (2026-11-27): each runner refuses the wrong Alpaca account (`RUNBOOK.md`, "Account numbers"). Without its
+  account number a runner does nothing, kill-switch liquidation included. Both dry runs passed the check on
+  2026-11-27: momentum 8 buys (85% gross, 10-30 signal), trend none. Order submission has never run against Alpaca.
 
 Key results (costs on, PIT universe, 2014-02-03..2026-11-25, final closes, recomputed 2026-11-26; numbers and
 reasoning in `DECISIONS.md`):
@@ -126,10 +135,10 @@ reasoning in `DECISIONS.md`):
 Paper trading setup (done 2026-11-25):
 - Two Alpaca paper accounts, because an account holds one set of positions and one equity (strategies cannot share
   one): momentum via `live.py` (`ALPACA_API_KEY/SECRET_KEY`), QQQ trend via `trend_live.py`
-  (`ALPACA_TREND_API_KEY/SECRET_KEY`). The account numbers differ (verified). Both dry runs worked: momentum plans
-  8 orders (85% gross after the hardware cap), trend plans none (QQQ below its 200d average).
-- The user's Mac: repo at `~/Desktop/Claude Trader`, `.venv` (Python 3.11.9), keys in `~/.alpaca_paper_env` (outside
-  the repo, chmod 600). Before each run: `source .venv/bin/activate && source ~/.alpaca_paper_env`. Cloud sessions
+  (`ALPACA_TREND_API_KEY/SECRET_KEY`). The account numbers differ (verified).
+- The user's Mac: repo at `~/Desktop/Claude Trader`, `.venv` (Python 3.11.9), keys and account numbers in
+  `~/.alpaca_paper_env` (outside the repo, chmod 600; never read or print it). Before each run:
+  `source .venv/bin/activate && source ~/.alpaca_paper_env`. Cloud sessions
   cannot see the Mac (no keys, no files, the folder is not offered to cloud sessions): the user runs the runners
   and pastes output with key values removed. Give macOS zsh commands, each in its own code block.
 
@@ -145,7 +154,8 @@ Next:
 - 2026-12-01 (Tuesday, the next rebalance): run both dry runs from about 15:00 ET, check the planned orders with the
   user, then `--submit` on both by 15:35 ET (target). `can_submit_moc` refuses after 15:45 ET (15 min before close).
   The user decided NOT to submit before then. Procedure: `RUNBOOK.md`. After that run both daily and
-  `python compare.py` weekly; read its output together once there are fills.
+  `python compare.py` weekly; read its output together once there are fills. A scheduled task on the Mac (14:30 ET
+  that day) runs only the momentum dry run, sourcing `~/.alpaca_paper_env`, and sends a phone reminder.
 - Done (PR #9): `RUNBOOK.md`; parameter plateau check (`analysis/param_plateau.py`). Result: 252/21/8 = 0.70,
   neighbours 0.67-0.74, rule says PLATEAU; lookback matters more than top_n (63 row 0.88-0.96).
 - Fixed 2026-11-26: a midday `live.py` run had cached the unfinished 11-25 bar as a close, which distorted the
@@ -154,8 +164,22 @@ Next:
   an entry rejection unlikely); `report.py` "today's picks" ignores the live kill-switch state; `trend_live.py`
   redirects `live.LOG_DIR` while it runs; `analysis/earnings.py` skips names silently on download errors and never
   refreshes its cache; `compare.py` shadow uses cached prices (live.py refreshes the same cache daily).
+- Open from the PR #19/#20 reviews: no order reconciliation; an `order_final` event is logged twice if only its alert
+  write fails; missing keys or a failing `--reset-kill-switch` log no alert; a corrupt state file stops the run with
+  no alert and no liquidation; the QQQ / stray-position guards exit with status 0; broker errors outside the account
+  check are logged in full and could contain account details. The rest of `AUDIT.md` is also open.
 - Open question: Step 7 (LLM layer) only after weeks to months of paper results. Idea for then: free SEC EDGAR
   8-K / 10-Q feeds as data inputs, with LLM outputs logged live to avoid training-data look-ahead.
+
+## Wanted later (user's backlog, 2026-11-26)
+
+Full wording: `I_DONT_LIKE.md` (master list). Wishes only: none is built, and none authorizes a change to trading
+behavior. The rules above still apply (an LLM never sizes or orders; follow the `DECISIONS.md` checklist).
+- First priority (agreed): the 12-01 paper trades, fixing what could go wrong there (`AUDIT.md`) before new features.
+- Run without the user's laptop: scheduled in the cloud (Claude Code, AWS, DigitalOcean or other; undecided).
+- Replace equal weights: hold more of the stocks expected to rise more (estimate method undecided).
+- Add an AI/LLM layer.
+- New inputs: company fundamentals and financial statements, earnings, news, social media and forums, macroeconomics.
 
 ## Style
 
