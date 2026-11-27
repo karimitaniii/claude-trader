@@ -112,3 +112,180 @@ def test_refuses_to_share_the_momentum_account(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         trend_live.main()
     assert exc.value.code == 2
+
+
+KILLED = {"last_kill_check": None, "last_submit_day": None, "logged_orders": [],
+          "kill": {"peak": 100_000.0, "killed": False, "days_killed": 0}}
+
+
+def down(*args, **kwargs):
+    raise ConnectionError("down")
+
+
+@pytest.mark.parametrize("failing", ["prices", "order history"])
+def test_kill_switch_liquidates_even_when_a_data_source_is_down(monkeypatch, failing):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions={"QQQ": 100.0})
+    if failing == "prices":
+        monkeypatch.setattr(trend_live, "load_prices", down)
+    else:
+        b.orders_since = down
+    with pytest.raises(ConnectionError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("QQQ", "sell")]
+
+
+def test_active_kill_switch_alerts_on_every_run(monkeypatch):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0)
+    trend_live.run(b, submit=False, now=WHEN)
+    trend_live.run(b, submit=False, now=WHEN)
+    assert sum(e["kind"] == "alert" and "KILL SWITCH" in e["message"] for e in events()) == 2
+
+
+@pytest.mark.parametrize("n", [60, 0])
+def test_short_benchmark_aborts_without_orders(monkeypatch, n):
+    fake_bench(monkeypatch, n=n)
+    b = PaperSimBroker()
+    trend_live.run(b, submit=True, now=WHEN)
+    assert b.submitted == []
+    assert any(e["kind"] == "alert" and "QQQ history" in e["message"] for e in events())
+
+
+def test_kill_state_is_on_disk_before_any_order_is_sent(monkeypatch):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions={"QQQ": 100.0})
+    seen = []
+    send = b.submit_market_on_close
+    b.submit_market_on_close = (
+        lambda o: seen.append(json.loads(trend_live.STATE_FILE.read_text())["kill"]["killed"]) or send(o))
+    trend_live.run(b, submit=True, now=WHEN)
+    assert seen == [True]
+
+
+@pytest.mark.parametrize("submit", [False, True])
+@pytest.mark.parametrize("held", [{"QQQ": 10.0}, {}])
+def test_killed_run_only_ever_sells_what_it_holds(monkeypatch, submit, held):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions=held)
+    trend_live.run(b, submit=submit, now=WHEN)
+    assert [(o.symbol, o.side) for o in b.submitted] == ([("QQQ", "sell")] if submit and held else [])
+
+
+def test_stray_position_is_never_liquidated(monkeypatch):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions={"NVDA": 1.0})
+    trend_live.run(b, submit=True, now=WHEN)
+    assert b.submitted == [] and json.loads(trend_live.STATE_FILE.read_text())["kill"]["killed"] is False
+
+
+def test_cutoff_does_not_record_a_submit_day(monkeypatch):
+    fake_bench(monkeypatch)
+    b = PaperSimBroker()
+    b.can_submit_moc = lambda: (False, "past the cutoff")
+    trend_live.run(b, submit=True, now=WHEN)
+    assert json.loads(trend_live.STATE_FILE.read_text())["last_submit_day"] is None
+
+
+@pytest.mark.parametrize("day, previous", [(15, None), (26, 25)])  # stale data / a session missing from the data
+def test_old_data_never_trades(monkeypatch, day, previous):
+    fake_bench(monkeypatch)  # last bar 2026-11-24
+    b = PaperSimBroker()
+    if previous:
+        b.previous_session = lambda today: datetime(2026, 11, previous).date()
+    trend_live.run(b, submit=True, now=datetime(2026, 12 if day == 15 else 11, day, 12, 0, tzinfo=live.ET))
+    assert b.submitted == []
+
+
+@pytest.mark.parametrize("rows, runs", [(199, False), (200, True)])
+def test_benchmark_needs_the_full_trend_window(monkeypatch, rows, runs):
+    fake_bench(monkeypatch, n=rows + 1)  # +1: today's bar is dropped
+    b = PaperSimBroker()
+    trend_live.run(b, submit=True, now=WHEN)
+    assert bool(b.submitted) is runs
+
+
+def disk_full(*args):
+    raise OSError("disk full")
+
+
+def test_kill_liquidates_even_if_the_state_cannot_be_saved(monkeypatch):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    monkeypatch.setattr(trend_live, "save_state", disk_full)
+    b = PaperSimBroker(equity=60_000.0, positions={"QQQ": 100.0})
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("QQQ", "sell")]
+    assert any(e["kind"] == "alert" and "could not save" in e["message"] for e in events())
+
+
+def test_no_entry_if_the_state_cannot_be_saved(monkeypatch):
+    fake_bench(monkeypatch)
+    monkeypatch.setattr(trend_live, "save_state", disk_full)
+    b = PaperSimBroker()
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert b.submitted == []
+
+
+def test_interrupted_save_keeps_the_previous_state(monkeypatch):
+    trend_live.save_state({"kill": "old"})
+    monkeypatch.setattr("os.replace", disk_full)
+    with pytest.raises(OSError):
+        trend_live.save_state({"kill": "new"})
+    assert trend_live.load_state() == {"kill": "old"}
+
+
+def unwritable_logs(monkeypatch, tmp_path):
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("")
+    monkeypatch.setattr(trend_live, "LOG_DIR", blocker / "logs")
+
+
+def test_no_entry_if_saving_fails_after_a_dry_run(monkeypatch):
+    fake_bench(monkeypatch)
+    b = PaperSimBroker()
+    trend_live.run(b, submit=False, now=WHEN)
+    monkeypatch.setattr(trend_live, "save_state", disk_full)
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert b.submitted == []
+
+
+def test_kill_liquidates_on_a_completely_full_disk(monkeypatch, tmp_path):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    monkeypatch.setattr(trend_live, "save_state", disk_full)
+    unwritable_logs(monkeypatch, tmp_path)
+    b = PaperSimBroker(equity=60_000.0, positions={"QQQ": 100.0})
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("QQQ", "sell")]
+
+
+def test_no_entry_without_a_writable_log(monkeypatch, tmp_path):
+    fake_bench(monkeypatch)
+    unwritable_logs(monkeypatch, tmp_path)
+    b = PaperSimBroker()
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert b.submitted == []
+
+
+def test_order_event_is_retried_until_it_is_written(monkeypatch, tmp_path):
+    fake_bench(monkeypatch)
+    good = trend_live.LOG_DIR
+    b = PaperSimBroker()
+    b.orders_since = lambda since: [{"client_order_id": "tm-x", "status": "filled", "filled_qty": 1}]
+    unwritable_logs(monkeypatch, tmp_path)
+    trend_live.run(b, submit=False, now=WHEN)
+    monkeypatch.setattr(trend_live, "LOG_DIR", good)
+    trend_live.run(b, submit=False, now=WHEN)
+    trend_live.run(b, submit=False, now=WHEN)
+    assert sum(e["kind"] == "fill" for e in events()) == 1

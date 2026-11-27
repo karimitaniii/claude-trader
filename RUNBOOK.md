@@ -37,12 +37,18 @@ python live.py
 python trend_live.py
 ```
 
-4. Read the output. Confirm the planned orders (ticker, side, quantity) are what you expect before anything is
-   sent. Check the `signal`, `risk` and `alert` lines (see "Log lines" below).
+4. Read the output. Confirm the `planned_order` lines (ticker, side, quantity) are what you expect before
+   anything is sent. Check the `signal`, `risk` and `alert` lines (see "Log lines" below).
 
-5. Submit only the orders you checked in step 4. Momentum plans orders on the first trading day of a month
-   (monthly rebalance), and on a kill-switch liquidation. The trend strategy plans orders only when QQQ crosses
-   its 200d average. Submit each strategy once per day:
+5. Submit only after checking step 4. `--submit` downloads and plans again, so compare its `planned_order` lines
+   (printed before anything is sent, with no confirmation prompt) with the dry run.
+
+   **Momentum trades on any `--submit` in a month that has no recorded rebalance**, not only on the first trading
+   day, and always on the previous month-end signal. An early or "just testing" `--submit` places real paper
+   orders. For example, any run dated 2026-11-30 (New York) or earlier in November uses the 10-30 signal; the
+   11-30 signal is used from 2026-12-01. Momentum also trades on a kill-switch liquidation. The trend strategy
+   plans an order whenever what it wants (in or out of QQQ) differs from what it holds. Submit each strategy once
+   per day:
 
 ```bash
 python live.py --submit
@@ -63,7 +69,8 @@ tail -n 20 logs/$(TZ=America/New_York date +%F).jsonl
 tail -n 20 logs/trend/$(TZ=America/New_York date +%F).jsonl
 ```
 
-On days with no rebalance, both runs normally log `no_rebalance` or `no_orders` and nothing else. That is expected.
+On days with nothing to trade, momentum normally logs `no_rebalance` and the trend runner `no_orders`, besides the
+usual `run_start`, `account`, `signal` (trend) and `run_end` lines. That is expected.
 
 ## Cutoff (market-on-close orders)
 
@@ -78,6 +85,9 @@ On days with no rebalance, both runs normally log `no_rebalance` or `no_orders` 
 
 Recommended order: dry runs at about 15:00-15:20 ET, then `--submit` for both before 15:35 ET.
 
+**Early-close days** (for example the day after Thanksgiving, usually a 13:00 ET close): every time above moves with
+the close. Submit at least 25 minutes before it. The code checks the broker's real close time before each order.
+
 ## Log lines
 
 Each log line is one JSON object with `ts`, `kind`, and fields specific to that kind. The `alert` and `error`
@@ -89,13 +99,15 @@ kinds are also printed to the terminal (stderr).
 | `account` | last-close equity, current positions, last price bar, and whether QQQ is above its 200d average | check equity looks right |
 | `signal` | targets from the previous month-end close (only on rebalance days) | compare with the backtest picks if unsure |
 | `risk` | targets after the risk layer; `fired` lists any caps or sell-off rules that changed them | note any cap that fired |
-| `dry_run` | the orders that `--submit` would send (nothing was sent) | review before submitting |
+| `planned_order` | one order in the plan (symbol, quantity, side), printed on dry and submit runs | review |
+| `dry_run` | dry run only: the number of planned orders (nothing was sent) | none |
 | `no_orders` | the plan is already at target | none |
 | `no_rebalance` | this month is already rebalanced | none |
+| `pre_submit` | state and log were writable just before sending new orders | none |
 | `order_submitted` | an order was accepted by Alpaca (paper) | confirm it later as a `fill` |
 | `fill` | an order filled; includes fill price and quantity | check fills against the close in `compare.py` |
 | `order_final` | an order ended without filling (rejected, canceled, expired) | see "Errors" |
-| `killed` | the kill switch is active; the strategy holds cash | see "Kill switch" |
+| `killed` | the kill switch is active and the account is flat | see "Kill switch" |
 | `manual_reset` | the kill switch was re-armed by a person | record why in the notes |
 | `error` | an exception, with `where` naming the step | see "Errors" |
 | `alert` | a human needs to look: kill switch, stale data, failed or unfilled order, cutoff missed | see below |
@@ -103,8 +115,20 @@ kinds are also printed to the terminal (stderr).
 
 ## Alerts and errors
 
-- **`stale data: last bar <date>; aborting`**: the price data is more than 5 days old. The run stops without
-  trading. Re-run later, and check that the market data source is up.
+- **`unusable QQQ history: ...; aborting`**: QQQ came back with fewer than 200 days, or (momentum) does not end on
+  the same day as the stock prices, or lacks 200 days up to and including the month-end signal day. No new rebalance or trend order is sent. While killed, a `--submit` run tries the
+  liquidation before this check (it can fail or be cut off; a dry run sends nothing). Re-run the dry run later; do not work around it. If this run sent any order, do not `--submit` again
+  today (see "Failed or unfilled orders").
+- **`QQQ held in the momentum account; is it the wrong account?`**: momentum never holds QQQ. Nothing is done, not
+  even the kill-switch check. Check which keys are loaded and the Alpaca dashboard. The guard cannot recognise the
+  trend account while it holds no QQQ, so check the keys yourself.
+- **`unexpected positions in the trend account: [...]`**: the same guard for the trend runner.
+- **`no price data before this month; aborting`**: there is no month-end row to take the signal from. Investigate.
+- **`stale data: last bar <date>; aborting`**: the price data is more than 5 days old. No new rebalance or trend
+  order is sent. While killed, a `--submit` run tries the liquidation before this check (it can fail or be cut off; a
+  dry run sends nothing). Re-run the dry run later, and check that the
+  market data source is up. If this run sent any order, do not `--submit` again today (see "Failed or unfilled
+  orders").
 - **`no price for [...] on <date> or <date>; aborting`**: a current member's price is missing (usually a failed
   download). Nothing is sent. Re-run the dry run. If the same name keeps failing, stop and investigate; do not
   work around the check.
@@ -113,27 +137,58 @@ kinds are also printed to the terminal (stderr).
 - **`no price for target [...] on <date>`**: a stock the strategy wants to hold has no price on the latest bar,
   possibly because it left the index and stopped trading. Nothing is sent. Re-run the dry run. If it persists, stop
   and investigate; do not work around the check.
-- If **every** order in a momentum batch was accepted, an order that later ends unfilled is **not retried**: the
-  month already counts as rebalanced. If any submission failed, the month is not recorded, so a later run can plan
-  accepted orders that went unfilled again. In both cases check the alert and the Alpaca dashboard.
 - **`no valid signal on <date>`**: the month-end signal could not be computed. No orders are placed. Investigate
   before the next rebalance.
-- **`not submitting: ...`**: the cutoff passed or the market is closed. Nothing was sent. Run `--submit` the
-  next trading day, or wait for the next rebalance if the rebalance day has passed.
+- **`not submitting: ...; N of M orders were attempted`**: the cutoff passed, the market is closed, or the cutoff
+  check itself failed. It runs before each order, so the first N may already be in the account. See "Failed or
+  unfilled orders".
+- **`could not save the kill state: ...; liquidating anyway`**: the state file could not be written (for example a
+  full disk). The liquidation still goes ahead with `--submit`, but the next run may not remember the kill. Fix the
+  disk and check the dashboard. Do not `--submit` again that day. If a later dry run shows no `KILL SWITCH` alert
+  while positions you expected to be sold remain, sell them by hand in the dashboard.
+- **`could not write the log: ...`** (terminal only): the log folder cannot be written. A new rebalance or trend
+  order is refused, but a kill-switch liquidation still goes ahead, so copy the terminal output: it may be the only
+  record. Fix the disk, check the dashboard, and do not `--submit` again that day if any order was sent. A fill or
+  unfilled-order event that could not be written is logged by a later run, within the 7-day lookback.
 - **`order failed: <client_order_id>`**: an order was rejected at submit time. The run keeps going for the other
-  orders. Read the `error` line next to it.
-- **`order <id> ended <status>`**: an order was not filled (for example `rejected`). Check it in the Alpaca paper
-  dashboard before doing anything else. Client order IDs are deterministic per day (`tm-YYYYMMDD-TICKER-side`), so
-  before re-running `--submit` on the same day, check whether the order is already in the account. Re-running
-  may create duplicates or be rejected, and I have not verified how Alpaca handles a repeated client ID.
-- **`run failed`** (with an `error` before it): the run stopped with an exception. Read the traceback in the
-  `error` line, fix the cause, and re-run the dry run before any `--submit`.
+  orders. Read the `error` line next to it, then see "Failed or unfilled orders".
+- **`order <id> ended <status>`**: an order was not filled (for example `rejected`). See "Failed or unfilled orders".
+- **`run failed`** (with an `error` before it): the run stopped with an exception. The terminal shows the traceback
+  (the `error` line holds only the message). If today's log has any `order_submitted` line, or an `error` line with
+  `where=submit` (Alpaca may have accepted an order whose reply was lost), even from before the step that failed, see
+  "Failed or unfilled orders". Otherwise fix the cause and re-run the dry run before any
+  `--submit`.
+
+## Failed or unfilled orders
+
+Applies after any failed, cut-off, interrupted or unfilled order, and whenever a run that sent orders ended in an
+alert or error.
+
+1. **Do not run `--submit` again that day.** Order IDs repeat within a day (`tm-YYYYMMDD-TICKER-side`, `-kill` for
+   liquidations), and how Alpaca treats a repeated ID has not been tested here.
+2. In the Alpaca paper dashboard, check every order and the positions.
+3. On the next trading day, once no earlier order is still open, do a dry run. This also logs the earlier fills
+   (the runners only look back 7 days).
+4. Then, depending on the case. **If that next trading day is in a new month** (for example, November 30 orders
+   followed up on December 1), momentum plans the new month's rebalance from the new month-end signal (here
+   November 30). The earlier month's record does not block it, so do not edit the state file; review the new signal and
+   orders, then `--submit`. The two momentum cases below are for a retry within the same month.
+   - **Momentum, a submission failed or was cut off:** the month is not recorded, so the dry run plans again from the
+     current positions. It may also contain small resizing orders. Review, then `--submit`.
+   - **Momentum, all orders accepted but some ended unfilled:** the month is recorded and nothing is retried. To retry,
+     set `"last_rebalance_month"` to `null` in `state/live_state.json`, dry run, review (the whole portfolio is
+     recalculated from the same month-end signal), then `--submit`. Or leave it until next month.
+   - **Trend:** if it holds no QQQ and wants to, it plans the buy again by itself, and if it holds QQQ and wants
+     out, the sell. A partly filled entry is **not** topped up.
+   - **Liquidation:** while killed and still holding positions, `--submit` sends the sells again.
 
 ## Kill switch
 
-- The kill switch fires when equity falls **25%** below its all-time high (`risk.py`, `kill_drawdown`). The alert
-  says `KILL SWITCH: ...`. The run then sells everything (`-kill` orders) and holds cash.
-- While killed, every daily run logs `killed` and does nothing else.
+- The kill switch fires when previous-close equity is **25%** below the highest value any run has seen
+  (`risk.py`, `kill_drawdown`), so run daily. It is checked before any price or order-history request.
+- While killed, every run, dry or not, alerts `KILL SWITCH active: ...` (unless a wrong-account guard stops it
+  first). Only `--submit` before the cutoff sells (`-kill` orders). Once the account is flat, a run whose data
+  downloads succeed also logs `killed`.
 - It stays killed until a person reviews and re-arms it. **Do not re-arm without reviewing why it fired.** Review
   the logs, decide, then run the reset for that strategy:
 
@@ -145,7 +200,10 @@ python live.py --reset-kill-switch
 python trend_live.py --reset-kill-switch
 ```
 
-  The reset sets the new peak at current equity and logs `manual_reset`.
+  The reset sets the new peak at previous-close equity and logs `manual_reset`. Run it only when the switch has
+  fired, the account is flat with no open orders, and not on the day of a liquidation: otherwise the next `--submit`
+  can send a second sell for shares already being sold. It does not clear the momentum month record: if this month was already rebalanced, momentum stays in cash
+  until next month.
 
 ## Weekly compare
 

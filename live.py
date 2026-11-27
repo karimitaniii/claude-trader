@@ -8,12 +8,14 @@ Run once per trading day while the market is open, before ~15:35 ET:
     python live.py --reset-kill-switch   # after reviewing a kill event: re-arm at current equity
 
 Each run:
-  1. logs fills/final status of earlier orders,
-  2. refreshes prices and drops today's (incomplete) bar, so decisions use the last close only,
-  3. updates the drawdown kill switch with last close equity (once per day),
-  4. if killed: liquidates and stays in cash until a manual reset,
-  5. on the first run of a new month: targets from the previous month-end close (same as the
-     backtest), passed through the risk layer, turned into whole-share market-on-close orders.
+  1. aborts if the account holds QQQ (probably the trend account),
+  2. updates the drawdown kill switch with last close equity (once per day); if killed, alerts and
+     liquidates (with --submit) before touching any other data, and stays in cash until a manual reset,
+  3. logs fills/final status of earlier orders,
+  4. refreshes prices and drops today's (incomplete) bar, so decisions use the last close only;
+     aborts on stale prices or a short or out-of-date QQQ history,
+  5. if no rebalance is recorded for this month: targets from the previous month-end close (same as
+     the backtest), passed through the risk layer, turned into whole-share market-on-close orders.
 
 Everything goes to logs/YYYY-MM-DD.jsonl; alerts are also printed to stderr.
 """
@@ -22,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -99,17 +102,28 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, indent=2, default=str))
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, default=str))
+    os.replace(tmp, STATE_FILE)  # atomic: an interrupted save leaves the previous state, never half a file
 
 
-def log_event(kind: str, **data) -> None:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+def log_event(kind: str, required: bool = False, **data) -> bool:
+    """Append to the day's log and print; True if written. A failed write is only reported, unless `required`."""
     now = datetime.now(timezone.utc)
     rec = {"ts": now.isoformat(timespec="seconds"), "kind": kind, **data}
-    with open(LOG_DIR / f"{now.astimezone(ET).date()}.jsonl", "a") as f:
-        f.write(json.dumps(rec, default=str) + "\n")
+    written = True
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(LOG_DIR / f"{now.astimezone(ET).date()}.jsonl", "a") as f:
+            f.write(json.dumps(rec, default=str) + "\n")
+    except OSError as e:
+        if required:
+            raise
+        written = False
+        print(f"[alert] could not write the log: {e!r}", file=sys.stderr)
     line = f"[{kind}] " + ", ".join(f"{k}={v}" for k, v in data.items() if k not in ("targets", "orders"))
     print(line, file=sys.stderr if kind in ("alert", "error") else sys.stdout)
+    return written
 
 
 def kill_switch_from_state(state: dict) -> KillSwitch:
@@ -131,10 +145,11 @@ def log_order_updates(broker: Broker, state: dict, today: pd.Timestamp) -> None:
     for o in broker.orders_since(since):
         cid = o.get("client_order_id") or ""
         if cid.startswith(ORDER_PREFIX + "-") and o["status"] in final and cid not in state["logged_orders"]:
-            log_event("fill" if o["status"] == "filled" else "order_final", **o)
+            written = log_event("fill" if o["status"] == "filled" else "order_final", **o)
             if o["status"] != "filled":
-                log_event("alert", message=f"order {cid} ended {o['status']}", filled_qty=o["filled_qty"])
-            state["logged_orders"].append(cid)
+                written &= log_event("alert", message=f"order {cid} ended {o['status']}", filled_qty=o["filled_qty"])
+            if written:  # otherwise a later run logs it again (compare.py reads fills from the log)
+                state["logged_orders"].append(cid)
     state["logged_orders"] = state["logged_orders"][-1000:]
 
 
@@ -151,15 +166,21 @@ def submit_all(broker: Broker, orders: list[OrderRequest], submit: bool) -> bool
     if not orders:
         log_event("no_orders")
         return True
+    for o in orders:  # printed in full before anything is sent: --submit re-plans, so it can differ from the dry run
+        log_event("planned_order", **asdict(o))
     if not submit:
         log_event("dry_run", n_orders=len(orders), orders=[asdict(o) for o in orders])
         return False
-    ok, why = broker.can_submit_moc()
-    if not ok:
-        log_event("alert", message=f"not submitting: {why}")
-        return False
     all_ok = True
-    for o in orders:
+    for i, o in enumerate(orders):
+        try:
+            ok, why = broker.can_submit_moc()  # per order: a slow batch can cross the cutoff
+        except Exception as e:  # cannot tell the time to close: send nothing more
+            log_event("error", where="cutoff_check", error=repr(e))
+            ok, why = False, f"cutoff check failed: {e!r}"
+        if not ok:
+            log_event("alert", message=f"not submitting: {why}; {i} of {len(orders)} orders were attempted")
+            return False
         try:
             log_event("order_submitted", **broker.submit_market_on_close(o))
         except Exception as e:  # keep going; every failure is logged and alerted
@@ -177,6 +198,29 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
     log_event("run_start", mode="submit" if submit else "dry_run", broker=type(broker).__name__, params=PARAMS,
               limits=asdict(LIMITS))
     try:
+        positions = broker.positions()
+        if BENCHMARK in positions:  # momentum never holds it: this is probably the trend account
+            log_event("alert", message=f"{BENCHMARK} held in the momentum account; is it the wrong account? aborting")
+            return
+        equity = broker.last_close_equity()
+
+        # The kill switch needs only the broker, so it runs before anything that can fail on market or order data.
+        ks = kill_switch_from_state(state)
+        if state.get("last_kill_check") != today.date().isoformat():
+            ks.update(equity, False)  # the trend flag only matters for automatic re-arm, which is off
+            state["kill"], state["last_kill_check"] = kill_switch_to_state(ks), today.date().isoformat()
+            try:
+                save_state(state)  # now: a killed process skips `finally`, and the later downloads can hang
+            except OSError as e:
+                if not ks.killed:  # trading on unsaved state could repeat orders on the next run
+                    raise
+                log_event("alert", message=f"could not save the kill state: {e!r}; liquidating anyway")
+        if ks.killed:
+            log_event("alert", message=f"KILL SWITCH active: equity {equity:,.0f}, peak {ks.peak:,.0f}, limit "
+                      f"{LIMITS.kill_drawdown:.0%}. Manual review + --reset-kill-switch required.")
+            if positions:
+                submit_all(broker, liquidation_orders(positions, tag), submit)
+
         log_order_updates(broker, state, today)
 
         stocks, eligible = load_universe("pit", refresh=True)
@@ -186,23 +230,17 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         if (today - last_bar).days > MAX_DATA_AGE_DAYS:
             log_event("alert", message=f"stale data: last bar {last_bar.date()}; aborting")
             return
+        if len(bench) < LIMITS.trend_window or bench.index[-1] != last_bar:
+            ends = bench.index[-1].date() if len(bench) else None
+            log_event("alert", message=f"unusable {BENCHMARK} history: {len(bench)} rows ending {ends}, need "
+                      f"{LIMITS.trend_window} ending {last_bar.date()}; aborting")
+            return
         trend = trend_ok(bench, LIMITS.trend_window)
-        equity = broker.last_close_equity()
-        positions = broker.positions()
         log_event("account", last_close_equity=equity, positions=positions, last_bar=last_bar.date(),
                   benchmark_above_trend=bool(trend.iloc[-1]))
 
-        ks = kill_switch_from_state(state)
-        if state.get("last_kill_check") != today.date().isoformat():
-            event = ks.update(equity, bool(trend.iloc[-1]))
-            state["kill"], state["last_kill_check"] = kill_switch_to_state(ks), today.date().isoformat()
-            if event == "kill":
-                log_event("alert", message=f"KILL SWITCH: equity {equity:,.0f} is {LIMITS.kill_drawdown:.0%} below "
-                          f"peak {ks.peak:,.0f}. Liquidating; manual review + --reset-kill-switch required.")
         if ks.killed:
-            if positions:
-                submit_all(broker, liquidation_orders(positions, tag), submit)
-            else:
+            if not positions:
                 log_event("killed", message="kill switch active, holding cash until manual reset")
             return
 
@@ -215,6 +253,11 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         signal_day = previous_month_end(stocks.index, today)
         if signal_day is None:
             log_event("alert", message="no price data before this month; aborting")
+            return
+        history = len(bench.loc[:signal_day])
+        if signal_day not in bench.index or history < LIMITS.trend_window:
+            log_event("alert", message=f"unusable {BENCHMARK} history: {history} rows through the signal day "
+                      f"{signal_day.date()}, need {LIMITS.trend_window} including it; aborting")
             return
         unpriced = unpriced_members([signal_day, last_bar])
         if unpriced:
@@ -234,6 +277,9 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
             log_event("alert", message=f"no price for target {stale} on {last_bar.date()}; aborting")
             return
         orders = plan_orders(allowed, positions, stocks.loc[last_bar], equity, tag)
+        if submit:  # fail before trading: unrecorded orders would be planned again
+            save_state(state)
+            log_event("pre_submit", required=True, n_orders=len(orders))
         if submit_all(broker, orders, submit) and submit:
             state["last_rebalance_month"] = month
     except Exception as e:
