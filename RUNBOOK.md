@@ -103,6 +103,7 @@ kinds are also printed to the terminal (stderr).
 | `dry_run` | dry run only: the number of planned orders (nothing was sent) | none |
 | `no_orders` | the plan is already at target | none |
 | `no_rebalance` | this month is already rebalanced | none |
+| `pre_submit` | state and log were writable just before sending new orders | none |
 | `order_submitted` | an order was accepted by Alpaca (paper) | confirm it later as a `fill` |
 | `fill` | an order filled; includes fill price and quantity | check fills against the close in `compare.py` |
 | `order_final` | an order ended without filling (rejected, canceled, expired) | see "Errors" |
@@ -114,8 +115,8 @@ kinds are also printed to the terminal (stderr).
 
 ## Alerts and errors
 
-- **`unusable QQQ history: ...; aborting`**: QQQ came back with fewer than 200 days or (momentum) does not end on
-  the same day as the stock prices. No new rebalance or trend order is sent. While killed, a `--submit` run tries the
+- **`unusable QQQ history: ...; aborting`**: QQQ came back with fewer than 200 days, or (momentum) does not end on
+  the same day as the stock prices, or lacks 200 days up to and including the month-end signal day. No new rebalance or trend order is sent. While killed, a `--submit` run tries the
   liquidation before this check (it can fail or be cut off; a dry run sends nothing). Re-run the dry run later; do not work around it. If this run sent any order, do not `--submit` again
   today (see "Failed or unfilled orders").
 - **`QQQ held in the momentum account; is it the wrong account?`**: momentum never holds QQQ. Nothing is done, not
@@ -145,6 +146,9 @@ kinds are also printed to the terminal (stderr).
   full disk). The liquidation still goes ahead with `--submit`, but the next run may not remember the kill. Fix the
   disk and check the dashboard. Do not `--submit` again that day. If a later dry run shows no `KILL SWITCH` alert
   while positions you expected to be sold remain, sell them by hand in the dashboard.
+- **`could not write the log: ...`** (terminal only): the log folder cannot be written. A new rebalance or trend
+  order is refused, but a kill-switch liquidation still goes ahead, so copy the terminal output: it may be the only
+  record. Fix the disk, check the dashboard, and do not `--submit` again that day if any order was sent.
 - **`order failed: <client_order_id>`**: an order was rejected at submit time. The run keeps going for the other
   orders. Read the `error` line next to it, then see "Failed or unfilled orders".
 - **`order <id> ended <status>`**: an order was not filled (for example `rejected`). See "Failed or unfilled orders".

@@ -337,13 +337,16 @@ def test_unfilled_order_alerts_once(monkeypatch, status):
 
 
 @pytest.mark.parametrize("rows, runs", [(199, False), (200, True)])
-def test_benchmark_needs_the_full_trend_window(monkeypatch, rows, runs):
+def test_benchmark_needs_the_full_trend_window_at_the_signal_day(monkeypatch, rows, runs):
     fake_market(monkeypatch)
-    bench = live.load_prices(["QQQ"], refresh=True).iloc[-rows - 1:]  # +1: today's bar is dropped
+    full = live.load_prices(["QQQ"], refresh=True)
+    through_signal = len(full.loc[:"2026-10-30"])  # the month-end signal day for a November run
+    bench = full.iloc[through_signal - rows:]
     monkeypatch.setattr(live, "load_prices", lambda tickers, refresh: bench)
     b = PaperSimBroker()
     live.run(b, submit=True, now=NOON)
     assert bool(b.submitted) is runs
+    assert any("QQQ history" in m for m in alerts()) is not runs
 
 
 def test_stocks_behind_the_benchmark_abort(monkeypatch):
@@ -389,3 +392,49 @@ def test_interrupted_save_keeps_the_previous_state(monkeypatch):
 
 def disk_full_replace(src, dst):
     raise OSError("interrupted")
+
+
+def unwritable_logs(monkeypatch, tmp_path):
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("")
+    monkeypatch.setattr(live, "LOG_DIR", blocker / "logs")
+
+
+def test_no_rebalance_if_saving_fails_after_a_dry_run(monkeypatch):
+    fake_market(monkeypatch)
+    b = PaperSimBroker()
+    live.run(b, submit=False, now=NOON)
+    monkeypatch.setattr(live, "save_state", disk_full)
+    with pytest.raises(OSError):
+        live.run(b, submit=True, now=NOON)
+    assert b.submitted == []
+
+
+def test_kill_liquidates_on_a_completely_full_disk(monkeypatch, tmp_path, capsys):
+    fake_market(monkeypatch)
+    live.STATE_FILE.write_text(json.dumps(KILLED))
+    monkeypatch.setattr(live, "save_state", disk_full)
+    unwritable_logs(monkeypatch, tmp_path)
+    b = PaperSimBroker(equity=60_000.0, positions={"A": 10.0})
+    with pytest.raises(OSError):
+        live.run(b, submit=True, now=NOON)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("A", "sell")]
+    assert "could not write the log" in capsys.readouterr().err
+
+
+def test_no_rebalance_without_a_writable_log(monkeypatch, tmp_path):
+    fake_market(monkeypatch)
+    unwritable_logs(monkeypatch, tmp_path)
+    b = PaperSimBroker()
+    with pytest.raises(OSError):
+        live.run(b, submit=True, now=NOON)
+    assert b.submitted == []
+
+
+def test_benchmark_missing_the_signal_day_aborts(monkeypatch):
+    fake_market(monkeypatch)
+    bench = live.load_prices(["QQQ"], refresh=True).drop(pd.Timestamp("2026-10-30"))
+    monkeypatch.setattr(live, "load_prices", lambda tickers, refresh: bench)
+    b = PaperSimBroker()
+    live.run(b, submit=True, now=NOON)
+    assert b.submitted == [] and any("signal day" in m for m in alerts())

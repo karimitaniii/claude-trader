@@ -107,12 +107,18 @@ def save_state(state: dict) -> None:
     os.replace(tmp, STATE_FILE)  # atomic: an interrupted save leaves the previous state, never half a file
 
 
-def log_event(kind: str, **data) -> None:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+def log_event(kind: str, required: bool = False, **data) -> None:
+    """Append to the day's log and print. A failed write is only reported, unless `required`."""
     now = datetime.now(timezone.utc)
     rec = {"ts": now.isoformat(timespec="seconds"), "kind": kind, **data}
-    with open(LOG_DIR / f"{now.astimezone(ET).date()}.jsonl", "a") as f:
-        f.write(json.dumps(rec, default=str) + "\n")
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(LOG_DIR / f"{now.astimezone(ET).date()}.jsonl", "a") as f:
+            f.write(json.dumps(rec, default=str) + "\n")
+    except OSError as e:
+        if required:
+            raise
+        print(f"[alert] could not write the log: {e!r}", file=sys.stderr)
     line = f"[{kind}] " + ", ".join(f"{k}={v}" for k, v in data.items() if k not in ("targets", "orders"))
     print(line, file=sys.stderr if kind in ("alert", "error") else sys.stdout)
 
@@ -244,6 +250,11 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         if signal_day is None:
             log_event("alert", message="no price data before this month; aborting")
             return
+        history = len(bench.loc[:signal_day])
+        if signal_day not in bench.index or history < LIMITS.trend_window:
+            log_event("alert", message=f"unusable {BENCHMARK} history: {history} rows through the signal day "
+                      f"{signal_day.date()}, need {LIMITS.trend_window} including it; aborting")
+            return
         unpriced = unpriced_members([signal_day, last_bar])
         if unpriced:
             log_event("alert", message=f"no price for {unpriced} on {signal_day.date()} or {last_bar.date()}; "
@@ -262,6 +273,9 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
             log_event("alert", message=f"no price for target {stale} on {last_bar.date()}; aborting")
             return
         orders = plan_orders(allowed, positions, stocks.loc[last_bar], equity, tag)
+        if submit:  # fail before trading: unrecorded orders would be planned again
+            save_state(state)
+            log_event("pre_submit", required=True, n_orders=len(orders))
         if submit_all(broker, orders, submit) and submit:
             state["last_rebalance_month"] = month
     except Exception as e:

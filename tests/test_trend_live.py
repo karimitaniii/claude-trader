@@ -240,3 +240,39 @@ def test_interrupted_save_keeps_the_previous_state(monkeypatch):
     with pytest.raises(OSError):
         trend_live.save_state({"kill": "new"})
     assert trend_live.load_state() == {"kill": "old"}
+
+
+def unwritable_logs(monkeypatch, tmp_path):
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("")
+    monkeypatch.setattr(trend_live, "LOG_DIR", blocker / "logs")
+
+
+def test_no_entry_if_saving_fails_after_a_dry_run(monkeypatch):
+    fake_bench(monkeypatch)
+    b = PaperSimBroker()
+    trend_live.run(b, submit=False, now=WHEN)
+    monkeypatch.setattr(trend_live, "save_state", disk_full)
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert b.submitted == []
+
+
+def test_kill_liquidates_on_a_completely_full_disk(monkeypatch, tmp_path):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    monkeypatch.setattr(trend_live, "save_state", disk_full)
+    unwritable_logs(monkeypatch, tmp_path)
+    b = PaperSimBroker(equity=60_000.0, positions={"QQQ": 100.0})
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("QQQ", "sell")]
+
+
+def test_no_entry_without_a_writable_log(monkeypatch, tmp_path):
+    fake_bench(monkeypatch)
+    unwritable_logs(monkeypatch, tmp_path)
+    b = PaperSimBroker()
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert b.submitted == []

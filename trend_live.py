@@ -145,6 +145,9 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
             return
         orders = plan_trend_orders(want_on, positions, float(bench.iloc[-1]), equity, tag)
         log_event("signal", signal_day=last_bar.date(), invested=want_on, held=positions.get(BENCHMARK, 0.0) > 0)
+        if submit and orders:  # fail before trading: unrecorded orders would be planned again
+            save_state(state)
+            log_event("pre_submit", required=True, n_orders=len(orders))
         if live.submit_all(broker, orders, submit) and submit and orders:
             state["last_submit_day"] = today.date().isoformat()
     except Exception as e:
