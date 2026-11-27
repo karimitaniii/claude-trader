@@ -37,6 +37,25 @@ def guarded_py(path):
     return name.endswith((".py", ".pyi")) and "/tests/" not in p and not name.startswith("test_")
 
 
+def weakens_file(tool, inp):
+    """Apply the edit to the file on disk and compare: a new live match or a lost paper lock means deny.
+    Catches partial edits (only `True` -> `False`) that the snippet check cannot see."""
+    try:
+        with open(inp["file_path"], encoding="utf-8", errors="replace") as f:
+            before = f.read()
+    except OSError:
+        return False  # new or unreadable file: the snippet check alone decides
+    if tool == "Write":
+        after = inp.get("content", "")
+    else:
+        after = before
+        edits = inp.get("edits") if tool == "MultiEdit" else [inp]
+        for e in edits:
+            after = after.replace(e.get("old_string", ""), e.get("new_string", ""), -1 if e.get("replace_all") else 1)
+    count = lambda rx, s: len(list(rx.finditer(s)))
+    return count(LIVE_CODE, after) > count(LIVE_CODE, before) or count(PAPER_LOCK, after) < count(PAPER_LOCK, before)
+
+
 def decide(event):
     tool, inp = event.get("tool_name", ""), event.get("tool_input") or {}
     if tool == "Bash":
@@ -51,7 +70,8 @@ def decide(event):
         pairs = [(inp.get("old_string", ""), inp.get("new_string", ""))] + [
             (e.get("old_string", ""), e.get("new_string", "")) for e in inp.get("edits", [])]
         text = "\n".join([inp.get("content", "")] + [new for _, new in pairs])
-        if LIVE_CODE.search(text) or any(PAPER_LOCK.search(old) and not PAPER_LOCK.search(new) for old, new in pairs):
+        if (LIVE_CODE.search(text) or any(PAPER_LOCK.search(old) and not PAPER_LOCK.search(new) for old, new in pairs)
+                or weakens_file(tool, inp)):
             return "deny", ("paper trading only: this edit sets the paper flag to something other than True, "
                             "adds the live Alpaca endpoint, or removes a paper lock")
     return None, ""

@@ -115,6 +115,18 @@ def test_safe_edits_allowed():
                new_string='assert "paper-api.alpaca.markets" in base, "not api.alpaca.markets"') == "deny"  # live host named
 
 
+def test_partial_edits_checked_against_file(tmp_path):
+    f = tmp_path / "broker.py"
+    f.write_text('"""`paper=True` is hard-coded."""\nURL = "paper-api.alpaca.markets"\nc = TradingClient(k, s, paper=True)\n')
+    assert run("Edit", file_path=str(f), old_string="paper=True)", new_string="paper=True)  # ok") is None
+    assert run("Edit", file_path=str(f), old_string="URL", new_string="BASE") is None  # docstring match predates the edit
+    assert run("Edit", file_path=str(f), old_string="True)", new_string="False)") == "deny"
+    assert run("Edit", file_path=str(f), old_string="paper-api", new_string="api") == "deny"
+    assert run("MultiEdit", file_path=str(f), edits=[{"old_string": "c = ", "new_string": "d = "},
+                                                     {"old_string": "True)", "new_string": "flag)"}]) == "deny"
+    assert run("Write", file_path=str(f), content=f.read_text().replace("paper=True)", "paper=flag)")) == "deny"
+
+
 @pytest.mark.parametrize("stdin", ["not json", "[]", '{"tool_name": "Bash", "tool_input": "str"}',
                                    '{"tool_name": "MultiEdit", "tool_input": {"file_path": "/r/a.py", "edits": null}}'])
 def test_bad_input_fails_closed(stdin):
