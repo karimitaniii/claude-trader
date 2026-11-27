@@ -9,5 +9,25 @@
         "repo": "DietrichGebert/ponytail"
       }
     }
+  },
+  "permissions": {
+    "deny": [
+      "Read(~/.alpaca_paper_env)",
+      "Read(./**/.env)",
+      "Read(./**/*.env)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard.py\""
+          }
+        ]
+      }
+    ]
   }
 }

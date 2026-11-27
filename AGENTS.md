@@ -11,3 +11,4 @@ Always:
 - Never report a backtest without fees and slippage.
 - Do not run `live.py --submit` or `trend_live.py --submit` unless asked.
 - Commit or push only when asked.
+- Begin every Codex-authored GitHub PR review, review comment, and review follow-up with `[Codex Review]`.
