@@ -485,44 +485,47 @@ def accounts(monkeypatch, own=OWN, other=OTHER):
             monkeypatch.setenv(name, value)
 
 
-REFUSED = [(None, OTHER, OWN), ("  ", OTHER, OWN), (OWN, OTHER, OTHER), (OWN, OTHER, ""), (OWN, OWN.lower(), OWN)]
+REFUSED = [(None, OTHER, OWN), ("  ", OTHER, OWN), (OWN, OTHER, OTHER), (OWN, OTHER, ""), (None, OTHER, ""),
+           (OWN, OWN.lower(), OWN)]
 
 
 @pytest.mark.parametrize("own, other, actual", REFUSED,
-                         ids=["unset", "blank", "other account", "empty number", "same twice"])
+                         ids=["unset", "blank", "other account", "empty number", "unset and empty", "same twice"])
 @pytest.mark.parametrize("saved", [KILLED_STATE, None], ids=["killed", "no state"])
-def test_wrong_account_is_refused_before_state_or_orders(monkeypatch, capsys, own, other, actual, saved):
+@pytest.mark.parametrize("submit", [True, False], ids=["submit", "dry run"])  # a dry run writes the kill state too
+def test_wrong_account_is_refused_before_state_or_orders(monkeypatch, capsys, own, other, actual, saved, submit):
     fake_market(monkeypatch)
     accounts(monkeypatch, own, other)
     if saved:
         live.STATE_FILE.write_text(saved)
     b = PaperSimBroker(positions={"A": 10.0}, account=actual)
     with pytest.raises(SystemExit) as exc:
-        live.run(b, submit=True, now=NOON)
+        live.run(b, submit=submit, now=NOON)
     assert exc.value.code == 1 and b.submitted == []
     assert (live.STATE_FILE.read_text() if live.STATE_FILE.exists() else None) == saved
-    assert any("ALPACA_ACCOUNT_NUMBER" in m for m in alerts())
+    assert any("ALPACA_ACCOUNT_NUMBER" in m and "NOT being liquidated" in m for m in alerts())
     out = capsys.readouterr()
     logged = out.out + out.err + json.dumps(events(live.LOG_DIR))
     assert "pa-test" not in logged.lower()  # account numbers are never printed or logged
 
 
-def test_account_lookup_failure_is_refused_with_an_alert(monkeypatch):
+def test_account_lookup_failure_is_refused_with_an_alert(monkeypatch, capsys):
     accounts(monkeypatch)
     b = PaperSimBroker(positions={"A": 10.0}, account=OWN)
 
     def rejected():
-        raise ConnectionError(f"no such account {OWN}")
+        raise RuntimeError(f"no such account {OWN}")  # any error type, not only network ones
 
     monkeypatch.setattr(b, "account_number", rejected)
     with pytest.raises(SystemExit):
         live.run(b, submit=True, now=NOON)
-    assert OWN not in json.dumps(events(live.LOG_DIR))  # an error message can carry the number
+    out = capsys.readouterr()
+    assert OWN not in out.out + out.err + json.dumps(events(live.LOG_DIR))  # an error message can carry the number
     assert b.submitted == [] and not live.STATE_FILE.exists()
     assert any("cannot verify" in m for m in alerts())
 
 
-def test_right_account_still_liquidates_when_market_data_is_down(monkeypatch):
+def test_right_account_still_liquidates_when_market_data_is_down(monkeypatch, capsys):
     accounts(monkeypatch)
     monkeypatch.setattr(live, "load_universe", down)
     live.STATE_FILE.write_text(KILLED_STATE)
@@ -530,6 +533,8 @@ def test_right_account_still_liquidates_when_market_data_is_down(monkeypatch):
     with pytest.raises(ConnectionError):
         live.run(b, submit=True, now=NOON)
     assert [(o.symbol, o.side) for o in b.submitted] == [("A", "sell")]
+    out = capsys.readouterr()
+    assert "pa-test" not in (out.out + out.err + json.dumps(events(live.LOG_DIR))).lower()  # nor on success
 
 
 @pytest.mark.parametrize("actual, allowed", [(OWN, True), (OTHER, False)])

@@ -168,12 +168,13 @@ def require_account(broker: Broker, env: str, other_env: str) -> None:
         elif expected == other:
             why = f"{env} and {other_env} hold the same number"
         elif actual.strip().upper() != expected:
-            why = f"the broker's account is not the one in {env}; check which keys are loaded"
+            why = f"the broker's account is not the one in {env}; check the loaded keys and that variable"
         else:
             return
     except Exception as e:
         why = f"cannot verify the account ({type(e).__name__})"  # the message could contain the number
-    log_event("alert", message=f"wrong-account guard: {why}. Nothing done: no kill-switch check, reset or orders")
+    log_event("alert", message=f"wrong-account guard: {why}. Nothing done: no kill-switch check, reset or orders, "
+              "so a killed account is NOT being liquidated. Fix before the cutoff (see RUNBOOK.md)")
     raise SystemExit(1)
 
 

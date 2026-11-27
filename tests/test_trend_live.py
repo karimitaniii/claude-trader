@@ -309,8 +309,10 @@ def accounts(monkeypatch, own=OWN, other=OTHER):
 @pytest.mark.parametrize("own, other, actual", [(None, OTHER, OWN), (OWN, OTHER, OTHER), (OWN, OWN, OWN)],
                          ids=["unset", "other account", "same twice"])
 @pytest.mark.parametrize("saved", [KILLED_STATE, None], ids=["killed", "no state"])
-def test_wrong_account_is_refused_before_state_or_orders(monkeypatch, own, other, actual, saved):
+@pytest.mark.parametrize("submit", [True, False], ids=["submit", "dry run"])
+def test_wrong_account_is_refused_before_state_or_orders(monkeypatch, own, other, actual, saved, submit):
     fake_bench(monkeypatch)
+    monkeypatch.setattr(live, "LOG_DIR", trend_live.LOG_DIR.parent / "momentum_logs")
     accounts(monkeypatch, own, other)
     if saved:
         trend_live.STATE_FILE.write_text(saved)
@@ -318,7 +320,7 @@ def test_wrong_account_is_refused_before_state_or_orders(monkeypatch, own, other
     for positions in ({}, {"QQQ": 10.0}):
         b = PaperSimBroker(positions=positions, account=actual)
         with pytest.raises(SystemExit) as exc:
-            trend_live.run(b, submit=True, now=WHEN)
+            trend_live.run(b, submit=submit, now=WHEN)
         assert exc.value.code == 1 and b.submitted == []
     assert (trend_live.STATE_FILE.read_text() if trend_live.STATE_FILE.exists() else None) == saved
     assert any(e["kind"] == "alert" and "ALPACA_TREND_ACCOUNT_NUMBER" in e["message"] for e in events())
