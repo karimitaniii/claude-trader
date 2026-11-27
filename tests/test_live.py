@@ -510,9 +510,14 @@ def test_wrong_account_is_refused_before_state_or_orders(monkeypatch, capsys, ow
 def test_account_lookup_failure_is_refused_with_an_alert(monkeypatch):
     accounts(monkeypatch)
     b = PaperSimBroker(positions={"A": 10.0}, account=OWN)
-    monkeypatch.setattr(b, "account_number", down)
+
+    def rejected():
+        raise ConnectionError(f"no such account {OWN}")
+
+    monkeypatch.setattr(b, "account_number", rejected)
     with pytest.raises(SystemExit):
         live.run(b, submit=True, now=NOON)
+    assert OWN not in json.dumps(events(live.LOG_DIR))  # an error message can carry the number
     assert b.submitted == [] and not live.STATE_FILE.exists()
     assert any("cannot verify" in m for m in alerts())
 

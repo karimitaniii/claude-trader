@@ -130,7 +130,7 @@ kinds are also printed to the terminal (stderr).
 | `manual_reset` | the kill switch was re-armed by a person | record why in the notes |
 | `error` | an exception, with `where` naming the step | see "Errors" |
 | `alert` | a human needs to look: kill switch, stale data, failed or unfilled order, cutoff missed | see below |
-| `run_end` | run finished (always logged, even after an error) | none |
+| `run_end` | run finished (logged even after an error; a wrong-account refusal logs only its `alert`) | none |
 
 ## Alerts and errors
 
@@ -140,7 +140,8 @@ kinds are also printed to the terminal (stderr).
   today (see "Failed or unfilled orders").
 - **`wrong-account guard: ...`**: the runner exits (status 1) before reading state: no kill-switch check, reset or
   orders. The message says why: a number variable is unset, both hold the same number, the loaded keys belong to a
-  different account, or the account could not be read (`cannot verify`; re-run once the broker is reachable). Fix
+  different account, or the account could not be read (`cannot verify (<error type>)`: check the connection, and check
+  the keys, since an `APIError` can mean they were rejected). Fix
   `~/.alpaca_paper_env`, `source` it again and dry run. While this alert shows, a killed account is **not** being
   liquidated: fix it before the cutoff, or sell by hand in the dashboard.
 - **`QQQ held in the momentum account; is it the wrong account?`**: momentum never holds QQQ. Nothing is done, not

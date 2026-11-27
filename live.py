@@ -172,7 +172,7 @@ def require_account(broker: Broker, env: str, other_env: str) -> None:
         else:
             return
     except Exception as e:
-        why = f"cannot verify the account: {e!r}"
+        why = f"cannot verify the account ({type(e).__name__})"  # the message could contain the number
     log_event("alert", message=f"wrong-account guard: {why}. Nothing done: no kill-switch check, reset or orders")
     raise SystemExit(1)
 
