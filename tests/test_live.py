@@ -167,6 +167,62 @@ def test_unpriced_target_aborts_without_orders(monkeypatch):
     assert json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None
 
 
+@pytest.mark.parametrize("submit", [True, False])
+@pytest.mark.parametrize("member", [True, False])
+def test_member_without_lookback_price_warns_but_still_trades(monkeypatch, member, submit):
+    close = fake_market(monkeypatch)
+    signal = close.index.get_loc(pd.Timestamp("2026-10-30"))
+    start, skip = (close.index[signal - n] for n in (126, 21))  # the two closes momentum divides (fake PARAMS)
+    raw = close.copy()
+    raw.loc[[start, skip], "A"] = np.nan  # no real price on either day, like a new listing
+    raw.loc[skip, "B"] = np.nan  # priced earlier, so a gap
+    eligible = pd.DataFrame(True, index=close.index, columns=close.columns)
+    eligible["A"] = member
+    eligible.loc[eligible.index > pd.Timestamp("2026-10-30"), "A"] = not member  # only the signal day counts
+    monkeypatch.setattr(live, "load_universe", lambda kind, refresh: (close, eligible))
+    monkeypatch.setattr(live, "unpriced_symbols", lambda syms, day: [s for s in syms if pd.isna(raw.at[day, s])])
+    b = PaperSimBroker()
+    live.run(b, submit=submit, now=NOON)
+    assert len(b.submitted) == (3 if submit else 0)  # warning only
+    log = events(live.LOG_DIR)
+    (warned,) = [i for i, e in enumerate(log) if e["kind"] == "alert" and "momentum history" in e["message"]]
+    on_start = f"'{start.date()}': ['A'], " if member else ""
+    on_skip = ['A', 'B'] if member else ['B']
+    assert f"{{{on_start}'{skip.date()}': {on_skip}}}" in log[warned]["message"]  # which name lacks which day
+    assert warned < next(i for i, e in enumerate(log) if e["kind"] == "planned_order")
+
+
+@pytest.mark.parametrize("submit", [True, False])
+@pytest.mark.parametrize("short, before_signal, runs", [  # which download lacks the rows, counted from 10-30
+    ("stocks", [55], False),
+    ("stocks", [126], False),     # the lookback day itself
+    ("stocks", [0], False),       # the month-end row: 10-29 would pass for the signal day
+    ("stocks", [-5], False),      # after the signal day
+    ("QQQ", [126], False),
+    ("QQQ", [80, 55], False),     # every date is listed
+    ("QQQ", [127], True),         # older than the lookback: no score uses it
+])
+def test_trading_days_must_match_the_benchmark(monkeypatch, short, before_signal, runs, submit):
+    close = fake_market(monkeypatch)
+    bench = live.load_prices(["QQQ"], refresh=True)
+    signal = close.index.get_loc(pd.Timestamp("2026-10-30"))
+    days = close.index[[signal - n for n in before_signal]]
+    if short == "stocks":
+        close = close.drop(days)
+        eligible = pd.DataFrame(True, index=close.index, columns=close.columns)
+        monkeypatch.setattr(live, "load_universe", lambda kind, refresh: (close, eligible))
+    else:
+        monkeypatch.setattr(live, "load_prices", lambda tickers, refresh: bench.drop(days))
+    b = PaperSimBroker()
+    live.run(b, submit=submit, now=NOON)
+    assert bool(b.submitted) is (runs and submit)
+    assert any(e["kind"] == "planned_order" for e in events(live.LOG_DIR)) is runs
+    other = "QQQ" if short == "stocks" else "stocks"
+    listed = f"{{'only in {other}': {[str(d.date()) for d in days]}}}"  # says which download has the extra dates
+    assert any("trading days differ" in m and listed in m for m in alerts()) is not runs
+    assert (json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None) is not (runs and submit)
+
+
 def test_no_prior_month_data_aborts_without_orders(monkeypatch):
     fake_market(monkeypatch)
     monkeypatch.setattr(live, "previous_month_end", lambda index, today: None)

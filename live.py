@@ -16,7 +16,9 @@ Each run:
   4. refreshes prices and drops today's (incomplete) bar, so decisions use the last close only;
      aborts on stale prices or a short or out-of-date QQQ history,
   5. if no rebalance is recorded for this month: targets from the previous month-end close (same as
-     the backtest), passed through the risk layer, turned into whole-share market-on-close orders.
+     the backtest), passed through the risk layer, turned into whole-share market-on-close orders; aborts if
+     stock and QQQ trading days differ over the momentum window, and alerts (without aborting) on members lacking a
+     price at either end of it.
 
 Everything goes to logs/YYYY-MM-DD.jsonl; alerts are also printed to stderr.
 """
@@ -187,6 +189,28 @@ def missing_last_session(broker: Broker, today: pd.Timestamp, last_bar: pd.Times
     return True
 
 
+def mismatched_days(stocks: pd.DatetimeIndex, bench: pd.DatetimeIndex, signal_day: pd.Timestamp) -> dict[str, list]:
+    """Dates only one of the two indexes has, from the momentum lookback day on; empty if none. The score counts rows,
+    so a day missing for every stock moves the comparison days (or the signal day) without leaving a blank price."""
+    start = stocks[max(stocks.get_loc(signal_day) - PARAMS["lookback"], 0)]
+    ours, theirs = stocks[stocks >= start], bench[bench >= start]
+    only = {"only in stocks": ours.difference(theirs), f"only in {BENCHMARK}": theirs.difference(ours)}
+    return {side: [str(d.date()) for d in days] for side, days in only.items() if len(days)}
+
+
+def warn_missing_history(index: pd.DatetimeIndex, eligible: pd.DataFrame, signal_day: pd.Timestamp) -> None:
+    """Alert on members with no real price on either day momentum compares: a truncated download would otherwise
+    change the picks silently. A warning only, because a newly listed member lacks that history for good reason.
+    Days missing from `index` itself are `mismatched_days`' job."""
+    at = index.get_loc(signal_day)
+    days = [index[at - n] for n in (PARAMS["lookback"], PARAMS["skip"]) if at >= n]
+    members = list(eligible.columns[eligible.loc[signal_day].astype(bool)])
+    missing = {str(day.date()): names for day in days if (names := unpriced_symbols(members, day))}
+    if missing:
+        log_event("alert", message=f"incomplete momentum history (date: names without a price) {missing}. Not "
+                  "aborting; see RUNBOOK.md before submitting")
+
+
 def submit_all(broker: Broker, orders: list[OrderRequest], submit: bool) -> bool:
     if not orders:
         log_event("no_orders")
@@ -285,11 +309,17 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
             log_event("alert", message=f"unusable {BENCHMARK} history: {history} rows through the signal day "
                       f"{signal_day.date()}, need {LIMITS.trend_window} including it; aborting")
             return
+        mismatch = mismatched_days(stocks.index, bench.index, signal_day)
+        if mismatch:
+            log_event("alert", message=f"stock and {BENCHMARK} trading days differ: {mismatch}; aborting, "
+                      "re-run to download again")
+            return
         unpriced = unpriced_members([signal_day, last_bar])
         if unpriced:
             log_event("alert", message=f"no price for {unpriced} on {signal_day.date()} or {last_bar.date()}; "
                       "aborting, re-run to download again")
             return
+        warn_missing_history(stocks.index, eligible, signal_day)
         raw = targets_from_signal_day(stocks, signal_day, eligible=eligible, **PARAMS)
         if raw is None:
             log_event("alert", message=f"no valid signal on {signal_day.date()}")
