@@ -115,8 +115,8 @@ kinds are also printed to the terminal (stderr).
 ## Alerts and errors
 
 - **`unusable QQQ history: ...; aborting`**: QQQ came back with fewer than 200 days or (momentum) does not end on
-  the same day as the stock prices. No new rebalance or trend order is sent (a kill-switch liquidation is sent before
-  this check). Re-run the dry run later; do not work around it. If this run sent any order, do not `--submit` again
+  the same day as the stock prices. No new rebalance or trend order is sent. While killed, a `--submit` run tries the
+  liquidation before this check (it can fail or be cut off; a dry run sends nothing). Re-run the dry run later; do not work around it. If this run sent any order, do not `--submit` again
   today (see "Failed or unfilled orders").
 - **`QQQ held in the momentum account; is it the wrong account?`**: momentum never holds QQQ. Nothing is done, not
   even the kill-switch check. Check which keys are loaded and the Alpaca dashboard. The guard cannot recognise the
@@ -124,7 +124,8 @@ kinds are also printed to the terminal (stderr).
 - **`unexpected positions in the trend account: [...]`**: the same guard for the trend runner.
 - **`no price data before this month; aborting`**: there is no month-end row to take the signal from. Investigate.
 - **`stale data: last bar <date>; aborting`**: the price data is more than 5 days old. No new rebalance or trend
-  order is sent (a kill-switch liquidation is sent before this check). Re-run the dry run later, and check that the
+  order is sent. While killed, a `--submit` run tries the liquidation before this check (it can fail or be cut off; a
+  dry run sends nothing). Re-run the dry run later, and check that the
   market data source is up. If this run sent any order, do not `--submit` again today (see "Failed or unfilled
   orders").
 - **`no price for [...] on <date> or <date>; aborting`**: a current member's price is missing (usually a failed
@@ -163,7 +164,10 @@ alert or error.
 2. In the Alpaca paper dashboard, check every order and the positions.
 3. On the next trading day, once no earlier order is still open, do a dry run. This also logs the earlier fills
    (the runners only look back 7 days).
-4. Then, depending on the case:
+4. Then, depending on the case. **If that next trading day is in a new month** (for example, November 30 orders
+   followed up on December 1), momentum plans the new month's rebalance from the new month-end signal (here
+   November 30). The earlier month's record does not block it, so do not edit the state file; review the new signal and
+   orders, then `--submit`. The two momentum cases below are for a retry within the same month.
    - **Momentum, a submission failed or was cut off:** the month is not recorded, so the dry run plans again from the
      current positions. It may also contain small resizing orders. Review, then `--submit`.
    - **Momentum, all orders accepted but some ended unfilled:** the month is recorded and nothing is retried. To retry,
