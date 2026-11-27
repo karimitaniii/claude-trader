@@ -21,6 +21,8 @@ def run(tool, **tool_input):
     "python3 live.py --offline --submit 2>&1 | tail",
     "python -m trend_live --submit",
     "python -c 'import live; live.main([\"--submit\"])'",
+    "python live.py --sub",  # argparse abbreviations
+    "python trend_live.py --s",
 ])
 def test_submit_asks(cmd):
     assert run("Bash", command=cmd) == "ask"
@@ -39,6 +41,23 @@ def test_submit_asks(cmd):
     "env ALPACA_API_KEY",
     "cat ~/.alpaca_paper_env",
     "source ~/.alpaca_paper_env; cat ~/.alpaca_paper_env",
+    "python live.py --submit; echo $ALPACA_API_KEY",  # deny wins over the submit ask
+    "set -x; source ~/.alpaca_paper_env",
+    "set -ex; source ~/.alpaca_paper_env && python live.py",
+    "set -o xtrace; . ~/.alpaca_paper_env",
+    "bash -x -c 'source ~/.alpaca_paper_env'",
+    "zsh -xic 'python live.py'  # ALPACA keys from zshrc",
+    "export",
+    "export | grep ALPACA",
+    "typeset -x",
+    "typeset -p",
+    "echo hi\nprintenv",
+    "echo `printenv`",
+    "{ env; }",
+    "sudo env",
+    "time printenv",
+    "cat ~/.alpaca_p*",
+    "cat ~/.alpaca_paper_en?",
 ])
 def test_key_printing_denied(cmd):
     assert run("Bash", command=cmd) == "deny"
@@ -51,6 +70,13 @@ def test_key_printing_denied(cmd):
     "env PYTHONPATH=. pytest -q",
     "pytest tests/test_live.py",
     "set -e; python live.py",
+    "set -e; source ~/.alpaca_paper_env && python live.py",
+    "zsh -ic 'coderabbit review --base main'",
+    "set -x; pytest -q",
+    "python live.py --offline",
+    "python live.py --reset-kill-switch",
+    "export PYTHONPATH=. && pytest -q",
+    "git commit -m 'set env vars'",
 ])
 def test_normal_commands_allowed(cmd):
     assert run("Bash", command=cmd) is None
@@ -63,6 +89,16 @@ def test_live_edits_denied():
                edits=[{"old_string": "a", "new_string": "b"}, {"old_string": "c", "new_string": "paper = False"}]) == "deny"
     for value in ("0", "not True", "use_paper"):
         assert run("Edit", file_path="/repo/broker.py", old_string="x", new_string=f"TradingClient(k, s, paper={value})") == "deny"
+    for new in ("def __init__(self, paper: bool = False):", "TradingClient(k, s, paper=True if ok else False)",
+                'TradingClient(k, s, **{"paper": False})', 'URL = "https://API.ALPACA.MARKETS"'):
+        assert run("Edit", file_path="/repo/broker.py", old_string="x", new_string=new) == "deny", new
+    # path tricks: upper-case suffix, a tests/.. detour, a stub file
+    for path in ("/repo/broker.PY", "/repo/tests/../broker.py", "/repo/broker.pyi"):
+        assert run("Write", file_path=path, content="paper=False") == "deny", path
+    # deleting the paper lock is as bad as flipping it
+    assert run("Edit", file_path="/repo/broker.py", old_string=", paper=True)", new_string=")") == "deny"
+    assert run("Edit", file_path="/repo/broker.py", old_string='URL = "paper-api.alpaca.markets"',
+               new_string="URL = None") == "deny"
 
 
 def test_safe_edits_allowed():
@@ -72,8 +108,29 @@ def test_safe_edits_allowed():
     assert run("Read", file_path="/repo/broker.py") is None
     assert run("Edit", file_path="/repo/broker.py", old_string="x", new_string="TradingClient(k, s, paper= True)") is None
     assert run("Edit", file_path="/repo/x.py", old_string="x", new_string="if paper == expected:") is None
+    assert run("Edit", file_path="/repo/broker.py", old_string="x",
+               new_string="TradingClient(k, s, paper=True)  # never change") is None
+    assert run("Edit", file_path="/repo/broker.py", old_string="paper=True)", new_string="paper=True, raw=False)") is None
+    assert run("Edit", file_path="/repo/broker.py", old_string="x",
+               new_string='assert "paper-api.alpaca.markets" in base, "not api.alpaca.markets"') == "deny"  # live host named
 
 
-def test_bad_input_fails_closed():
-    out = subprocess.run([sys.executable, str(GUARD)], input="not json", capture_output=True, text=True).stdout
+@pytest.mark.parametrize("stdin", ["not json", "[]", '{"tool_name": "Bash", "tool_input": "str"}',
+                                   '{"tool_name": "MultiEdit", "tool_input": {"file_path": "/r/a.py", "edits": null}}'])
+def test_bad_input_fails_closed(stdin):
+    # exit 2 is Claude Code's blocking code; it does not depend on stdout being parsed
+    assert subprocess.run([sys.executable, str(GUARD)], input=stdin, capture_output=True, text=True).returncode == 2
+
+
+def test_wiring_matches_settings():
+    """settings.json runs this guard with /usr/bin/python3 on Bash and file edits; that interpreter must run it."""
+    settings = json.loads((GUARD.parents[1] / "settings.json").read_text())
+    (entry,) = settings["hooks"]["PreToolUse"]
+    assert set(entry["matcher"].split("|")) >= {"Bash", "Edit", "Write", "MultiEdit"}
+    cmd = entry["hooks"][0]["command"]
+    assert cmd.startswith("/usr/bin/python3 ") and cmd.endswith('/.claude/hooks/guard.py"')
+    if not Path("/usr/bin/python3").exists():
+        pytest.skip("no /usr/bin/python3 here")
+    out = subprocess.run(["/usr/bin/python3", str(GUARD)], capture_output=True, text=True, check=True,
+                         input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "printenv"}})).stdout
     assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
