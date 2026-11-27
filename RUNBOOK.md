@@ -116,15 +116,17 @@ kinds are also printed to the terminal (stderr).
 
 - **`unusable QQQ history: ...; aborting`**: QQQ came back with fewer than 200 days or (momentum) does not end on
   the same day as the stock prices. No new rebalance or trend order is sent (a kill-switch liquidation is sent before
-  this check). Re-run later; do not work around it.
+  this check). Re-run the dry run later; do not work around it. If this run sent any order, do not `--submit` again
+  today (see "Failed or unfilled orders").
 - **`QQQ held in the momentum account; is it the wrong account?`**: momentum never holds QQQ. Nothing is done, not
   even the kill-switch check. Check which keys are loaded and the Alpaca dashboard. The guard cannot recognise the
   trend account while it holds no QQQ, so check the keys yourself.
 - **`unexpected positions in the trend account: [...]`**: the same guard for the trend runner.
 - **`no price data before this month; aborting`**: there is no month-end row to take the signal from. Investigate.
 - **`stale data: last bar <date>; aborting`**: the price data is more than 5 days old. No new rebalance or trend
-  order is sent (a kill-switch liquidation is sent before this check). Re-run later, and check that the market data
-  source is up.
+  order is sent (a kill-switch liquidation is sent before this check). Re-run the dry run later, and check that the
+  market data source is up. If this run sent any order, do not `--submit` again today (see "Failed or unfilled
+  orders").
 - **`no price for [...] on <date> or <date>; aborting`**: a current member's price is missing (usually a failed
   download). Nothing is sent. Re-run the dry run. If the same name keeps failing, stop and investigate; do not
   work around the check.
@@ -138,12 +140,17 @@ kinds are also printed to the terminal (stderr).
 - **`not submitting: ...; N of M orders were attempted`**: the cutoff passed, the market is closed, or the cutoff
   check itself failed. It runs before each order, so the first N may already be in the account. See "Failed or
   unfilled orders".
+- **`could not save the kill state: ...; liquidating anyway`**: the state file could not be written (for example a
+  full disk). The liquidation still goes ahead with `--submit`, but the next run may not remember the kill. Fix the
+  disk and check the dashboard. Do not `--submit` again that day. If a later dry run shows no `KILL SWITCH` alert
+  while positions you expected to be sold remain, sell them by hand in the dashboard.
 - **`order failed: <client_order_id>`**: an order was rejected at submit time. The run keeps going for the other
   orders. Read the `error` line next to it, then see "Failed or unfilled orders".
 - **`order <id> ended <status>`**: an order was not filled (for example `rejected`). See "Failed or unfilled orders".
 - **`run failed`** (with an `error` before it): the run stopped with an exception. The terminal shows the traceback
-  (the `error` line holds only the message). If today's log has any `order_submitted` line, even one sent before
-  the step that failed, see "Failed or unfilled orders". Otherwise fix the cause and re-run the dry run before any
+  (the `error` line holds only the message). If today's log has any `order_submitted` line, or an `error` line with
+  `where=submit` (Alpaca may have accepted an order whose reply was lost), even from before the step that failed, see
+  "Failed or unfilled orders". Otherwise fix the cause and re-run the dry run before any
   `--submit`.
 
 ## Failed or unfilled orders

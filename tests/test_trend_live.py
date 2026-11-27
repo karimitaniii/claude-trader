@@ -208,3 +208,35 @@ def test_benchmark_needs_the_full_trend_window(monkeypatch, rows, runs):
     b = PaperSimBroker()
     trend_live.run(b, submit=True, now=WHEN)
     assert bool(b.submitted) is runs
+
+
+def disk_full(*args):
+    raise OSError("disk full")
+
+
+def test_kill_liquidates_even_if_the_state_cannot_be_saved(monkeypatch):
+    fake_bench(monkeypatch)
+    trend_live.STATE_FILE.write_text(json.dumps(KILLED))
+    monkeypatch.setattr(trend_live, "save_state", disk_full)
+    b = PaperSimBroker(equity=60_000.0, positions={"QQQ": 100.0})
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("QQQ", "sell")]
+    assert any(e["kind"] == "alert" and "could not save" in e["message"] for e in events())
+
+
+def test_no_entry_if_the_state_cannot_be_saved(monkeypatch):
+    fake_bench(monkeypatch)
+    monkeypatch.setattr(trend_live, "save_state", disk_full)
+    b = PaperSimBroker()
+    with pytest.raises(OSError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert b.submitted == []
+
+
+def test_interrupted_save_keeps_the_previous_state(monkeypatch):
+    trend_live.save_state({"kill": "old"})
+    monkeypatch.setattr("os.replace", disk_full)
+    with pytest.raises(OSError):
+        trend_live.save_state({"kill": "new"})
+    assert trend_live.load_state() == {"kill": "old"}

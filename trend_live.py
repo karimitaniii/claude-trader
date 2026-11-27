@@ -69,7 +69,9 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, indent=2, default=str))
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, default=str))
+    os.replace(tmp, STATE_FILE)  # atomic: an interrupted save leaves the previous state, never half a file
 
 
 def kill_switch_from_state(state: dict) -> KillSwitch:
@@ -104,7 +106,12 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         if state.get("last_kill_check") != today.date().isoformat():
             ks.update(equity, False)  # the trend flag only matters for automatic re-arm, which is off
             state["kill"], state["last_kill_check"] = kill_switch_to_state(ks), today.date().isoformat()
-            save_state(state)  # now: a killed process skips `finally`, and the later downloads can hang
+            try:
+                save_state(state)  # now: a killed process skips `finally`, and the later downloads can hang
+            except OSError as e:
+                if not ks.killed:  # trading on unsaved state could repeat orders on the next run
+                    raise
+                log_event("alert", message=f"could not save the kill state: {e!r}; liquidating anyway")
         if ks.killed:
             log_event("alert", message=f"KILL SWITCH active: equity {equity:,.0f}, peak {ks.peak:,.0f}, limit "
                       f"{LIMITS.kill_drawdown:.0%}. Manual review + --reset-kill-switch required.")

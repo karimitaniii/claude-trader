@@ -4,7 +4,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 from alpaca.common.enums import BaseURL
-from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.enums import OrderSide, OrderStatus, QueryOrderStatus, TimeInForce
 
 from broker import AlpacaPaperBroker, OrderRequest
 
@@ -26,7 +26,7 @@ class FakeClient:
 
     def get_orders(self, request):
         self.query = request
-        return [NS(id=2, client_order_id="tm-y", symbol="NVDA", side=OrderSide.BUY, qty="7", status="filled",
+        return [NS(id=2, client_order_id="tm-y", symbol="NVDA", side=OrderSide.BUY, qty="7", status=OrderStatus.FILLED,
                    filled_qty="7", filled_avg_price="101.5")]
 
     def get_calendar(self, request):
@@ -81,6 +81,7 @@ def test_reads_positions_and_all_orders(monkeypatch):
     b = adapter(monkeypatch, client)
     assert b.positions() == {"NVDA": 7.0}
     (order,) = b.orders_since("2026-11-24")
+    assert order["client_order_id"] == "tm-y"
     assert (order["status"], order["side"], order["filled_qty"], order["filled_avg_price"]) == (
         "filled", "buy", 7.0, 101.5)
     assert client.query.status == QueryOrderStatus.ALL and client.query.after == datetime(2026, 11, 24)

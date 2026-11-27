@@ -282,10 +282,17 @@ def test_kill_state_is_on_disk_before_any_order_is_sent(monkeypatch):
 def test_clock_error_mid_batch_stops_and_says_how_far_it_got(monkeypatch):
     fake_market(monkeypatch)
     b = PaperSimBroker()
-    b.can_submit_moc = lambda: down() if b.submitted else (True, "")
+    calls = []
+
+    def clock():
+        calls.append(1)
+        return down() if len(calls) == 2 else (True, "")
+
+    b.can_submit_moc = clock
     live.run(b, submit=True, now=NOON)
     assert len(b.submitted) == 1
     assert any("not submitting" in m and "1 of 3" in m for m in alerts())
+    assert [e["where"] for e in events(live.LOG_DIR) if e["kind"] == "error"] == ["cutoff_check"]
     assert json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None
 
 
@@ -318,14 +325,15 @@ def test_rejected_order_leaves_the_month_open(monkeypatch):
     assert any("order failed" in m for m in alerts())
 
 
-def test_unfilled_order_alerts_once(monkeypatch):
+@pytest.mark.parametrize("status", ["rejected", "canceled", "expired"])
+def test_unfilled_order_alerts_once(monkeypatch, status):
     fake_market(monkeypatch)
     b = PaperSimBroker()
-    b.orders_since = lambda since: [{"client_order_id": "tm-x", "status": "rejected", "filled_qty": 0}]
+    b.orders_since = lambda since: [{"client_order_id": "tm-x", "status": status, "filled_qty": 0}]
     live.run(b, submit=False, now=NOON)
     live.run(b, submit=False, now=NOON)
     assert sum(e["kind"] == "order_final" for e in events(live.LOG_DIR)) == 1
-    assert sum("ended rejected" in m for m in alerts()) == 1
+    assert sum(f"ended {status}" in m for m in alerts()) == 1
 
 
 @pytest.mark.parametrize("rows, runs", [(199, False), (200, True)])
@@ -345,3 +353,39 @@ def test_stocks_behind_the_benchmark_abort(monkeypatch):
     b = PaperSimBroker()
     live.run(b, submit=True, now=NOON)
     assert b.submitted == [] and any("QQQ history" in m for m in alerts())
+
+
+def disk_full(state):
+    raise OSError("disk full")
+
+
+def test_kill_liquidates_even_if_the_state_cannot_be_saved(monkeypatch):
+    fake_market(monkeypatch)
+    live.STATE_FILE.write_text(json.dumps(KILLED))
+    monkeypatch.setattr(live, "save_state", disk_full)
+    b = PaperSimBroker(equity=60_000.0, positions={"A": 10.0})
+    with pytest.raises(OSError):  # still loud: the final save fails too
+        live.run(b, submit=True, now=NOON)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("A", "sell")]
+    assert any("could not save" in m for m in alerts())
+
+
+def test_no_rebalance_if_the_state_cannot_be_saved(monkeypatch):
+    fake_market(monkeypatch)
+    monkeypatch.setattr(live, "save_state", disk_full)
+    b = PaperSimBroker()
+    with pytest.raises(OSError):
+        live.run(b, submit=True, now=NOON)
+    assert b.submitted == []  # an unrecorded month would be traded again
+
+
+def test_interrupted_save_keeps_the_previous_state(monkeypatch):
+    live.save_state({"kill": "old"})
+    monkeypatch.setattr("os.replace", disk_full_replace)
+    with pytest.raises(OSError):
+        live.save_state({"kill": "new"})
+    assert live.load_state() == {"kill": "old"}
+
+
+def disk_full_replace(src, dst):
+    raise OSError("interrupted")
