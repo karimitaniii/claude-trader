@@ -156,6 +156,17 @@ kinds are also printed to the terminal (stderr).
 - **`no price for [...] on <date> or <date>; aborting`**: a current member's price is missing (usually a failed
   download). Nothing is sent. Re-run the dry run. If the same name keeps failing, stop and investigate; do not
   work around the check.
+- **`stock and QQQ trading days differ: {...}; aborting`**: from the momentum lookback day on, the listed dates are in
+  only one of the two downloads (missing from the other, or extra in this one). No rebalance orders are sent. Re-run
+  the dry run. If the same dates stay, stop and investigate; do not work around the check. It cannot see a day both
+  downloads miss.
+- **`incomplete momentum history (date: names without a price) {...}`**: a current member has no price on a day the
+  momentum score uses, so it is left out of the ranking, or (a gap inside its history) scored on an older price. The
+  run does not abort. A new listing explains a name only if it listed after the date shown; a name missing on the
+  later date but not the earlier one is a gap. A cut-off download looks like a new listing, so check the listing date.
+  If a name is unexplained, re-run the dry run, and if it stays, stop and investigate; do not `--submit`. A `--submit`
+  run downloads again and sends its orders even if this alert first appears there: check the alerts on both runs, and
+  if it was new, check the orders in the dashboard and see "Failed or unfilled orders".
 - **`last bar <date> but the previous session was <date>; aborting`**: the data source has not delivered the
   previous trading day yet. Wait a few minutes and re-run.
 - **`no price for target [...] on <date>`**: a stock the strategy wants to hold has no price on the latest bar,
