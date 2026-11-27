@@ -8,6 +8,7 @@ Run once per trading day while the market is open, before ~15:35 ET:
     python live.py --reset-kill-switch   # after reviewing a kill event: re-arm at current equity
 
 Each run:
+  0. exits unless the broker's account number equals ALPACA_ACCOUNT_NUMBER (also for --reset-kill-switch),
   1. aborts if the account holds QQQ (probably the trend account),
   2. updates the drawdown kill switch with last close equity (once per day); if killed, alerts and
      liquidates (with --submit) before touching any other data, and stays in cash until a manual reset,
@@ -47,6 +48,7 @@ ET = ZoneInfo("America/New_York")
 PARAMS = {"top_n": 8, "lookback": 252, "skip": 21}  # untuned defaults, same as backtest.py
 LIMITS = RiskLimits()
 ORDER_PREFIX = "tm"
+ACCOUNT_ENV, TREND_ACCOUNT_ENV = "ALPACA_ACCOUNT_NUMBER", "ALPACA_TREND_ACCOUNT_NUMBER"
 MAX_DATA_AGE_DAYS = 5
 
 
@@ -153,6 +155,28 @@ def log_order_updates(broker: Broker, state: dict, today: pd.Timestamp) -> None:
     state["logged_orders"] = state["logged_orders"][-1000:]
 
 
+def require_account(broker: Broker, env: str, other_env: str) -> None:
+    """Exit unless the broker's account number is the one in `env`. Call before reading state or sending orders.
+    Account numbers are never printed or logged."""
+    expected, other = (os.environ.get(name, "").strip().upper() for name in (env, other_env))
+    try:
+        actual = broker.account_number()
+        if actual is None:  # PaperSimBroker (offline)
+            return
+        if not expected:
+            why = f"{env} is not set"
+        elif expected == other:
+            why = f"{env} and {other_env} hold the same number"
+        elif actual.strip().upper() != expected:
+            why = f"the broker's account is not the one in {env}; check which keys are loaded"
+        else:
+            return
+    except Exception as e:
+        why = f"cannot verify the account: {e!r}"
+    log_event("alert", message=f"wrong-account guard: {why}. Nothing done: no kill-switch check, reset or orders")
+    raise SystemExit(1)
+
+
 def missing_last_session(broker: Broker, today: pd.Timestamp, last_bar: pd.Timestamp) -> bool:
     """Alert if the newest price bar is older than the previous trading session (the signal would be out of date)."""
     expected = broker.previous_session(today.date())
@@ -194,6 +218,7 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
     now = now or datetime.now(ET)
     today = pd.Timestamp(now.date())
     tag = today.strftime("%Y%m%d")
+    require_account(broker, ACCOUNT_ENV, TREND_ACCOUNT_ENV)
     state = load_state()
     log_event("run_start", mode="submit" if submit else "dry_run", broker=type(broker).__name__, params=PARAMS,
               limits=asdict(LIMITS))
@@ -305,6 +330,7 @@ def main() -> None:
     broker: Broker = PaperSimBroker() if args.offline else AlpacaPaperBroker()
 
     if args.reset_kill_switch:
+        require_account(broker, ACCOUNT_ENV, TREND_ACCOUNT_ENV)
         state = load_state()
         ks = kill_switch_from_state(state)
         ks.reset(broker.last_close_equity())

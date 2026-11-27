@@ -6,6 +6,7 @@ close, via a market-on-close order. It runs next to `live.py` (momentum) so the 
 data. The account holds positions and equity, so the strategies cannot share one paper account:
 
     export ALPACA_TREND_API_KEY=... ALPACA_TREND_SECRET_KEY=...   # keys of the second paper account
+    export ALPACA_TREND_ACCOUNT_NUMBER=...  # its account number; any other account is refused, reset included
     python trend_live.py              # dry run: plan + log, submit nothing
     python trend_live.py --submit     # submit the market-on-close order to the trend paper account
     python trend_live.py --offline    # dry run with no broker ($100k simulated account)
@@ -90,6 +91,7 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
     now = now or datetime.now(live.ET)
     today = pd.Timestamp(now.date())
     tag = today.strftime("%Y%m%d")
+    live.require_account(broker, live.TREND_ACCOUNT_ENV, live.ACCOUNT_ENV)
     state = load_state()
     log_event = live.log_event
     log_event("run_start", strategy="qqq_trend", mode="submit" if submit else "dry_run",
@@ -176,6 +178,7 @@ def main() -> None:
 
     if args.reset_kill_switch:
         live.LOG_DIR = LOG_DIR
+        live.require_account(broker, live.TREND_ACCOUNT_ENV, live.ACCOUNT_ENV)
         state = load_state()
         ks = kill_switch_from_state(state)
         ks.reset(broker.last_close_equity())

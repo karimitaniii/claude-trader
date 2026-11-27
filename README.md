@@ -35,7 +35,7 @@ python -m pytest
 ```bash
 python backtest.py             # full backtest + risk-layer report
 python walkforward.py pit      # walk-forward on the point-in-time universe
-python live.py                 # dry run against the paper account (needs ALPACA_API_KEY / ALPACA_SECRET_KEY)
+python live.py                 # dry run against the paper account (needs the keys and account number, see RUNBOOK.md)
 python live.py --submit        # once per trading day, before ~15:35 ET
 python compare.py              # paper results vs backtest expectations
 ```

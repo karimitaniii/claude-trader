@@ -10,6 +10,25 @@ dry runs unless you pass `--submit`. Nothing here touches live money.
 
 Keys live in `~/.alpaca_paper_env` (outside the repo, `chmod 600`). Never paste key values into chat or commit them.
 
+## Account numbers (one-time setup)
+
+Each runner refuses to run unless the broker's account number is the one you configured for it. In the Alpaca
+paper dashboard, open each account, copy its account number, and add two lines to `~/.alpaca_paper_env`:
+
+```text
+export ALPACA_ACCOUNT_NUMBER=<number of the momentum account>
+export ALPACA_TREND_ACCOUNT_NUMBER=<number of the QQQ trend account>
+```
+
+Take each number from the dashboard of the account that strategy should trade, not from whatever the loaded keys
+point at. Then run `source ~/.alpaca_paper_env` and both dry runs. **Do this before the first `--submit`:** without
+the numbers neither runner does anything, including a kill-switch liquidation. Do not paste the numbers into chat
+or commit them. `--offline` needs no number.
+
+The check cannot catch both the keys and the numbers being swapped together. If you replace a paper account (it
+gets a new number), update its line and delete that strategy's state file (`state/live_state.json` or
+`state/trend_state.json`): the old kill peak and records belong to the old account.
+
 ## Daily steps (each trading day, before the cutoff)
 
 Run these from the repo. Use one terminal window for the whole sequence.
@@ -119,9 +138,13 @@ kinds are also printed to the terminal (stderr).
   the same day as the stock prices, or lacks 200 days up to and including the month-end signal day. No new rebalance or trend order is sent. While killed, a `--submit` run tries the
   liquidation before this check (it can fail or be cut off; a dry run sends nothing). Re-run the dry run later; do not work around it. If this run sent any order, do not `--submit` again
   today (see "Failed or unfilled orders").
+- **`wrong-account guard: ...`**: the runner exits (status 1) before reading state: no kill-switch check, reset or
+  orders. The message says why: a number variable is unset, both hold the same number, the loaded keys belong to a
+  different account, or the account could not be read (`cannot verify`; re-run once the broker is reachable). Fix
+  `~/.alpaca_paper_env`, `source` it again and dry run. While this alert shows, a killed account is **not** being
+  liquidated: fix it before the cutoff, or sell by hand in the dashboard.
 - **`QQQ held in the momentum account; is it the wrong account?`**: momentum never holds QQQ. Nothing is done, not
-  even the kill-switch check. Check which keys are loaded and the Alpaca dashboard. The guard cannot recognise the
-  trend account while it holds no QQQ, so check the keys yourself.
+  even the kill-switch check. Check which keys and account number are loaded and the Alpaca dashboard.
 - **`unexpected positions in the trend account: [...]`**: the same guard for the trend runner.
 - **`no price data before this month; aborting`**: there is no month-end row to take the signal from. Investigate.
 - **`stale data: last bar <date>; aborting`**: the price data is more than 5 days old. No new rebalance or trend
