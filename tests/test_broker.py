@@ -14,7 +14,7 @@ class FakeClient:
         self.minutes_left, self.is_open, self._base_url, self.sent = minutes_left, is_open, url, []
 
     def get_account(self):
-        return NS(last_equity="101000.5", equity="90000")
+        return NS(last_equity="101000.5", equity="90000", account_number="PA-TEST")
 
     def get_clock(self):
         now = datetime(2026, 12, 1, 15, 0, tzinfo=timezone.utc)
@@ -85,3 +85,7 @@ def test_reads_positions_and_all_orders(monkeypatch):
     assert (order["status"], order["side"], order["filled_qty"], order["filled_avg_price"]) == (
         "filled", "buy", 7.0, 101.5)
     assert client.query.status == QueryOrderStatus.ALL and client.query.after == datetime(2026, 11, 24)
+
+
+def test_reads_the_account_number(monkeypatch):
+    assert adapter(monkeypatch, FakeClient()).account_number() == "PA-TEST"

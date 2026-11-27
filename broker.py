@@ -23,6 +23,7 @@ class OrderRequest:
 
 
 class Broker(Protocol):
+    def account_number(self) -> str | None: ...
     def last_close_equity(self) -> float: ...
     def positions(self) -> dict[str, float]: ...
     def submit_market_on_close(self, order: OrderRequest) -> dict: ...
@@ -47,6 +48,9 @@ class AlpacaPaperBroker:
         base = str(getattr(url, "value", url))
         if PAPER_URL_FRAGMENT not in base:
             raise RuntimeError(f"refusing to trade: client is not pointed at the paper endpoint ({base!r})")
+
+    def account_number(self) -> str:
+        return str(self._client.get_account().account_number)
 
     def last_close_equity(self) -> float:
         # Account equity as of the previous close: the same quantity the backtest kill switch uses.
@@ -111,8 +115,13 @@ def _order_dict(o) -> dict:
 class PaperSimBroker:
     """Offline stand-in for dry runs and tests: holds positions in memory, fills nothing."""
 
-    def __init__(self, equity: float = 100_000.0, positions: dict[str, float] | None = None) -> None:
+    def __init__(self, equity: float = 100_000.0, positions: dict[str, float] | None = None,
+                 account: str | None = None) -> None:
         self._equity, self._positions, self.submitted = equity, dict(positions or {}), []
+        self._account = account
+
+    def account_number(self) -> str | None:
+        return self._account  # None: purely simulated, so there is no account to verify
 
     def last_close_equity(self) -> float:
         return self._equity

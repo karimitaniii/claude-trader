@@ -289,3 +289,68 @@ def test_order_event_is_retried_until_it_is_written(monkeypatch, tmp_path):
     trend_live.run(b, submit=False, now=WHEN)
     trend_live.run(b, submit=False, now=WHEN)
     assert sum(e["kind"] == "fill" for e in events()) == 1
+
+
+# ---------- wrong-account guard ----------
+
+OWN, OTHER = "PA-TEST-TREND", "PA-TEST-MOMENTUM"
+KILLED_STATE = json.dumps({"last_submit_day": None, "last_kill_check": None, "logged_orders": [],
+                           "kill": {"peak": 100_000.0, "killed": True, "days_killed": 1}})
+
+
+def accounts(monkeypatch, own=OWN, other=OTHER):
+    for name, value in (("ALPACA_TREND_ACCOUNT_NUMBER", own), ("ALPACA_ACCOUNT_NUMBER", other)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+
+
+@pytest.mark.parametrize("own, other, actual", [(None, OTHER, OWN), (OWN, OTHER, OTHER), (OWN, OWN, OWN)],
+                         ids=["unset", "other account", "same twice"])
+@pytest.mark.parametrize("saved", [KILLED_STATE, None], ids=["killed", "no state"])
+@pytest.mark.parametrize("submit", [True, False], ids=["submit", "dry run"])
+def test_wrong_account_is_refused_before_state_or_orders(monkeypatch, own, other, actual, saved, submit):
+    fake_bench(monkeypatch)
+    monkeypatch.setattr(live, "LOG_DIR", trend_live.LOG_DIR.parent / "momentum_logs")
+    accounts(monkeypatch, own, other)
+    if saved:
+        trend_live.STATE_FILE.write_text(saved)
+    # all cash or holding only QQQ: nothing but the account number tells the accounts apart
+    for positions in ({}, {"QQQ": 10.0}):
+        b = PaperSimBroker(positions=positions, account=actual)
+        with pytest.raises(SystemExit) as exc:
+            trend_live.run(b, submit=submit, now=WHEN)
+        assert exc.value.code == 1 and b.submitted == []
+    assert (trend_live.STATE_FILE.read_text() if trend_live.STATE_FILE.exists() else None) == saved
+    assert any(e["kind"] == "alert" and "ALPACA_TREND_ACCOUNT_NUMBER" in e["message"] for e in events())
+
+
+def test_right_account_still_liquidates_when_market_data_is_down(monkeypatch):
+    accounts(monkeypatch)
+    monkeypatch.setattr(trend_live, "load_prices", down)
+    trend_live.STATE_FILE.write_text(KILLED_STATE)
+    b = PaperSimBroker(positions={"QQQ": 10.0}, account=OWN)
+    with pytest.raises(ConnectionError):
+        trend_live.run(b, submit=True, now=WHEN)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("QQQ", "sell")]
+
+
+@pytest.mark.parametrize("actual, allowed", [(OWN, True), (OTHER, False)])
+def test_reset_kill_switch_checks_the_account(monkeypatch, actual, allowed):
+    accounts(monkeypatch)
+    monkeypatch.delenv("ALPACA_TREND_API_KEY", raising=False)
+    monkeypatch.setattr(live, "LOG_DIR", trend_live.LOG_DIR.parent / "momentum_logs")
+    trend_live.STATE_FILE.write_text(KILLED_STATE)
+    monkeypatch.setattr(trend_live, "AlpacaPaperBroker",
+                        lambda key, secret: PaperSimBroker(equity=70_000.0, account=actual))
+    monkeypatch.setattr("sys.argv", ["trend_live.py", "--reset-kill-switch"])
+    if allowed:
+        trend_live.main()
+        assert json.loads(trend_live.STATE_FILE.read_text())["kill"]["killed"] is False
+    else:
+        with pytest.raises(SystemExit):
+            trend_live.main()
+        assert trend_live.STATE_FILE.read_text() == KILLED_STATE
+    assert events()
+    assert not (trend_live.LOG_DIR.parent / "momentum_logs").exists()  # trend alerts go to the trend log

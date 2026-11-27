@@ -467,3 +467,94 @@ def test_order_is_retried_if_only_its_alert_was_not_written(monkeypatch):
     live.run(b, submit=False, now=NOON)
     assert sum("ended rejected" in m for m in alerts()) == 1
     assert json.loads(live.STATE_FILE.read_text())["logged_orders"] == ["tm-x"]
+
+
+# ---------- wrong-account guard ----------
+
+OWN, OTHER = "PA-TEST-MOMENTUM", "PA-TEST-TREND"
+KILLED_STATE = json.dumps({"last_rebalance_month": None, "last_kill_check": None, "logged_orders": [],
+                           "kill": {"peak": 100_000.0, "killed": True, "days_killed": 1}})
+NOON = datetime(2026, 11, 24, 12, 0, tzinfo=live.ET)
+
+
+def accounts(monkeypatch, own=OWN, other=OTHER):
+    for name, value in (("ALPACA_ACCOUNT_NUMBER", own), ("ALPACA_TREND_ACCOUNT_NUMBER", other)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+
+
+REFUSED = [(None, OTHER, OWN), ("  ", OTHER, OWN), (OWN, OTHER, OTHER), (OWN, OTHER, ""), (None, OTHER, ""),
+           (OWN, OWN.lower(), OWN)]
+
+
+@pytest.mark.parametrize("own, other, actual", REFUSED,
+                         ids=["unset", "blank", "other account", "empty number", "unset and empty", "same twice"])
+@pytest.mark.parametrize("saved", [KILLED_STATE, None], ids=["killed", "no state"])
+@pytest.mark.parametrize("submit", [True, False], ids=["submit", "dry run"])  # a dry run writes the kill state too
+def test_wrong_account_is_refused_before_state_or_orders(monkeypatch, capsys, own, other, actual, saved, submit):
+    fake_market(monkeypatch)
+    accounts(monkeypatch, own, other)
+    if saved:
+        live.STATE_FILE.write_text(saved)
+    b = PaperSimBroker(positions={"A": 10.0}, account=actual)
+    with pytest.raises(SystemExit) as exc:
+        live.run(b, submit=submit, now=NOON)
+    assert exc.value.code == 1 and b.submitted == []
+    assert (live.STATE_FILE.read_text() if live.STATE_FILE.exists() else None) == saved
+    assert any("ALPACA_ACCOUNT_NUMBER" in m and "NOT being liquidated" in m for m in alerts())
+    out = capsys.readouterr()
+    logged = out.out + out.err + json.dumps(events(live.LOG_DIR))
+    assert "pa-test" not in logged.lower()  # account numbers are never printed or logged
+
+
+def test_account_lookup_failure_is_refused_with_an_alert(monkeypatch, capsys):
+    accounts(monkeypatch)
+    b = PaperSimBroker(positions={"A": 10.0}, account=OWN)
+
+    def rejected():
+        raise RuntimeError(f"no such account {OWN}")  # any error type, not only network ones
+
+    monkeypatch.setattr(b, "account_number", rejected)
+    with pytest.raises(SystemExit):
+        live.run(b, submit=True, now=NOON)
+    out = capsys.readouterr()
+    assert OWN not in out.out + out.err + json.dumps(events(live.LOG_DIR))  # an error message can carry the number
+    assert b.submitted == [] and not live.STATE_FILE.exists()
+    assert any("cannot verify" in m for m in alerts())
+
+
+def test_right_account_still_liquidates_when_market_data_is_down(monkeypatch, capsys):
+    accounts(monkeypatch)
+    monkeypatch.setattr(live, "load_universe", down)
+    live.STATE_FILE.write_text(KILLED_STATE)
+    b = PaperSimBroker(positions={"A": 10.0}, account=f" {OWN.lower()} ")  # case and spaces do not matter
+    with pytest.raises(ConnectionError):
+        live.run(b, submit=True, now=NOON)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("A", "sell")]
+    out = capsys.readouterr()
+    assert "pa-test" not in (out.out + out.err + json.dumps(events(live.LOG_DIR))).lower()  # nor on success
+
+
+@pytest.mark.parametrize("actual, allowed", [(OWN, True), (OTHER, False)])
+def test_reset_kill_switch_checks_the_account(monkeypatch, actual, allowed):
+    accounts(monkeypatch)
+    live.STATE_FILE.write_text(KILLED_STATE)
+    monkeypatch.setattr(live, "AlpacaPaperBroker", lambda: PaperSimBroker(equity=70_000.0, account=actual))
+    monkeypatch.setattr("sys.argv", ["live.py", "--reset-kill-switch"])
+    if allowed:
+        live.main()
+        assert json.loads(live.STATE_FILE.read_text())["kill"] == {"peak": 70_000.0, "killed": False, "days_killed": 0}
+    else:
+        with pytest.raises(SystemExit):
+            live.main()
+        assert live.STATE_FILE.read_text() == KILLED_STATE
+
+
+def test_offline_needs_no_account_number(monkeypatch, tmp_path):
+    accounts(monkeypatch, None, None)
+    monkeypatch.setattr(live, "ROOT", tmp_path)
+    monkeypatch.setattr("sys.argv", ["live.py", "--offline", "--reset-kill-switch"])
+    live.main()
+    assert (tmp_path / "state" / "offline_state.json").exists()
