@@ -184,3 +184,164 @@ def test_missing_previous_session_aborts(monkeypatch):
     live.run(b, submit=True, now=datetime(2026, 11, 26, 12, 0, tzinfo=live.ET))
     assert b.submitted == []
     assert any(e["kind"] == "alert" and "previous session" in e["message"] for e in events(live.LOG_DIR))
+
+
+# ---------- failure handling ----------
+
+KILLED = {"last_rebalance_month": None, "last_kill_check": None, "logged_orders": [],
+          "kill": {"peak": 100_000.0, "killed": False, "days_killed": 0}}
+NOON = datetime(2026, 11, 24, 12, 0, tzinfo=live.ET)
+
+
+def alerts():
+    return [e["message"] for e in events(live.LOG_DIR) if e["kind"] == "alert"]
+
+
+def down(*args, **kwargs):
+    raise ConnectionError("down")
+
+
+@pytest.mark.parametrize("failing", ["prices", "order history"])
+def test_kill_switch_liquidates_even_when_a_data_source_is_down(monkeypatch, failing):
+    fake_market(monkeypatch)
+    live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions={"A": 10.0})
+    if failing == "prices":
+        monkeypatch.setattr(live, "load_universe", down)
+    else:
+        b.orders_since = down
+    with pytest.raises(ConnectionError):
+        live.run(b, submit=True, now=NOON)
+    assert [(o.symbol, o.side) for o in b.submitted] == [("A", "sell")]
+    assert json.loads(live.STATE_FILE.read_text())["kill"]["killed"] is True
+
+
+@pytest.mark.parametrize("positions", [{"A": 10.0}, {}])
+def test_active_kill_switch_alerts_on_every_run(monkeypatch, positions):
+    fake_market(monkeypatch)
+    live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions=positions)
+    live.run(b, submit=False, now=NOON)
+    live.run(b, submit=False, now=NOON)  # same day, e.g. the --submit run after the dry run
+    assert sum("KILL SWITCH" in m for m in alerts()) == 2
+
+
+@pytest.mark.parametrize("cut", [slice(-60, None), slice(None, -2)])  # too short / ends a day before the stocks (today's bar is dropped)
+def test_unusable_benchmark_aborts_without_orders(monkeypatch, cut):
+    fake_market(monkeypatch)
+    bench = live.load_prices(["QQQ"], refresh=True).iloc[cut]
+    monkeypatch.setattr(live, "load_prices", lambda tickers, refresh: bench)
+    b = PaperSimBroker()
+    live.run(b, submit=True, now=NOON)
+    assert b.submitted == [] and any("QQQ history" in m for m in alerts())
+    assert not any(e["kind"] == "error" for e in events(live.LOG_DIR))
+
+
+def test_account_holding_qqq_is_left_alone(monkeypatch):
+    fake_market(monkeypatch)
+    live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions={"QQQ": 10.0})
+    live.run(b, submit=True, now=NOON)
+    assert b.submitted == [] and any("wrong account" in m for m in alerts())
+    assert json.loads(live.STATE_FILE.read_text())["kill"]["killed"] is False  # its equity is not ours either
+
+
+@pytest.mark.parametrize("submit", [False, True])
+def test_every_order_is_printed_before_anything_is_sent(monkeypatch, capsys, submit):
+    fake_market(monkeypatch)
+    b = PaperSimBroker()
+    live.run(b, submit=submit, now=NOON)
+    out = capsys.readouterr().out
+    planned = [e for e in events(live.LOG_DIR) if e["kind"] == "planned_order"]
+    assert len(planned) == 3 and all(f"symbol={e['symbol']}" in out and f"qty={e['qty']}" in out for e in planned)
+    if submit:
+        assert out.rindex("[planned_order]") < out.index("[order_submitted]")
+
+
+def test_cutoff_is_checked_before_each_order(monkeypatch):
+    fake_market(monkeypatch)
+    b = PaperSimBroker()
+    b.can_submit_moc = lambda: (not b.submitted, "past the closing-auction cutoff")
+    live.run(b, submit=True, now=NOON)
+    assert len(b.submitted) == 1
+    assert any("not submitting" in m and "1 of 3" in m for m in alerts())
+    assert json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None
+
+
+def test_kill_state_is_on_disk_before_any_order_is_sent(monkeypatch):
+    fake_market(monkeypatch)
+    live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions={"A": 10.0})
+    seen = []
+    send = b.submit_market_on_close
+    b.submit_market_on_close = lambda o: seen.append(json.loads(live.STATE_FILE.read_text())["kill"]["killed"]) or send(o)
+    live.run(b, submit=True, now=NOON)
+    assert seen == [True]  # a closed terminal or power cut later in the run cannot forget the kill
+
+
+def test_clock_error_mid_batch_stops_and_says_how_far_it_got(monkeypatch):
+    fake_market(monkeypatch)
+    b = PaperSimBroker()
+    b.can_submit_moc = lambda: down() if b.submitted else (True, "")
+    live.run(b, submit=True, now=NOON)
+    assert len(b.submitted) == 1
+    assert any("not submitting" in m and "1 of 3" in m for m in alerts())
+    assert json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None
+
+
+@pytest.mark.parametrize("submit", [False, True])
+@pytest.mark.parametrize("held", [{"A": 10.0}, {}])
+def test_killed_run_only_ever_sells_what_it_holds(monkeypatch, submit, held):
+    fake_market(monkeypatch)
+    live.STATE_FILE.write_text(json.dumps(KILLED))
+    b = PaperSimBroker(equity=60_000.0, positions=held)
+    live.run(b, submit=submit, now=NOON)
+    assert [(o.symbol, o.side) for o in b.submitted] == ([("A", "sell")] if submit and held else [])
+    assert not any(e["kind"] == "signal" for e in events(live.LOG_DIR))
+
+
+def test_rejected_order_leaves_the_month_open(monkeypatch):
+    fake_market(monkeypatch)
+    b = PaperSimBroker()
+    send, tried = b.submit_market_on_close, []
+
+    def flaky(o):
+        tried.append(o)
+        if len(tried) == 1:
+            raise RuntimeError("rejected")
+        return send(o)
+
+    b.submit_market_on_close = flaky
+    live.run(b, submit=True, now=NOON)
+    assert len(b.submitted) == 2  # the rest still go
+    assert json.loads(live.STATE_FILE.read_text())["last_rebalance_month"] is None
+    assert any("order failed" in m for m in alerts())
+
+
+def test_unfilled_order_alerts_once(monkeypatch):
+    fake_market(monkeypatch)
+    b = PaperSimBroker()
+    b.orders_since = lambda since: [{"client_order_id": "tm-x", "status": "rejected", "filled_qty": 0}]
+    live.run(b, submit=False, now=NOON)
+    live.run(b, submit=False, now=NOON)
+    assert sum(e["kind"] == "order_final" for e in events(live.LOG_DIR)) == 1
+    assert sum("ended rejected" in m for m in alerts()) == 1
+
+
+@pytest.mark.parametrize("rows, runs", [(199, False), (200, True)])
+def test_benchmark_needs_the_full_trend_window(monkeypatch, rows, runs):
+    fake_market(monkeypatch)
+    bench = live.load_prices(["QQQ"], refresh=True).iloc[-rows - 1:]  # +1: today's bar is dropped
+    monkeypatch.setattr(live, "load_prices", lambda tickers, refresh: bench)
+    b = PaperSimBroker()
+    live.run(b, submit=True, now=NOON)
+    assert bool(b.submitted) is runs
+
+
+def test_stocks_behind_the_benchmark_abort(monkeypatch):
+    close = fake_market(monkeypatch)
+    eligible = pd.DataFrame(True, index=close.index, columns=close.columns)
+    monkeypatch.setattr(live, "load_universe", lambda kind, refresh: (close.iloc[:-2], eligible.iloc[:-2]))
+    b = PaperSimBroker()
+    live.run(b, submit=True, now=NOON)
+    assert b.submitted == [] and any("QQQ history" in m for m in alerts())

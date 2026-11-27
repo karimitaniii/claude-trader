@@ -8,12 +8,14 @@ Run once per trading day while the market is open, before ~15:35 ET:
     python live.py --reset-kill-switch   # after reviewing a kill event: re-arm at current equity
 
 Each run:
-  1. logs fills/final status of earlier orders,
-  2. refreshes prices and drops today's (incomplete) bar, so decisions use the last close only,
-  3. updates the drawdown kill switch with last close equity (once per day),
-  4. if killed: liquidates and stays in cash until a manual reset,
-  5. on the first run of a new month: targets from the previous month-end close (same as the
-     backtest), passed through the risk layer, turned into whole-share market-on-close orders.
+  1. aborts if the account holds QQQ (probably the trend account),
+  2. updates the drawdown kill switch with last close equity (once per day); if killed, alerts and
+     liquidates (with --submit) before touching any other data, and stays in cash until a manual reset,
+  3. logs fills/final status of earlier orders,
+  4. refreshes prices and drops today's (incomplete) bar, so decisions use the last close only;
+     aborts on stale prices or a short or out-of-date QQQ history,
+  5. if no rebalance is recorded for this month: targets from the previous month-end close (same as
+     the backtest), passed through the risk layer, turned into whole-share market-on-close orders.
 
 Everything goes to logs/YYYY-MM-DD.jsonl; alerts are also printed to stderr.
 """
@@ -151,15 +153,20 @@ def submit_all(broker: Broker, orders: list[OrderRequest], submit: bool) -> bool
     if not orders:
         log_event("no_orders")
         return True
+    for o in orders:  # printed in full before anything is sent: --submit re-plans, so it can differ from the dry run
+        log_event("planned_order", **asdict(o))
     if not submit:
         log_event("dry_run", n_orders=len(orders), orders=[asdict(o) for o in orders])
         return False
-    ok, why = broker.can_submit_moc()
-    if not ok:
-        log_event("alert", message=f"not submitting: {why}")
-        return False
     all_ok = True
-    for o in orders:
+    for i, o in enumerate(orders):
+        try:
+            ok, why = broker.can_submit_moc()  # per order: a slow batch can cross the cutoff
+        except Exception as e:  # cannot tell the time to close: send nothing more
+            ok, why = False, f"cutoff check failed: {e!r}"
+        if not ok:
+            log_event("alert", message=f"not submitting: {why}; {i} of {len(orders)} orders were attempted")
+            return False
         try:
             log_event("order_submitted", **broker.submit_market_on_close(o))
         except Exception as e:  # keep going; every failure is logged and alerted
@@ -177,6 +184,24 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
     log_event("run_start", mode="submit" if submit else "dry_run", broker=type(broker).__name__, params=PARAMS,
               limits=asdict(LIMITS))
     try:
+        positions = broker.positions()
+        if BENCHMARK in positions:  # momentum never holds it: this is probably the trend account
+            log_event("alert", message=f"{BENCHMARK} held in the momentum account; is it the wrong account? aborting")
+            return
+        equity = broker.last_close_equity()
+
+        # The kill switch needs only the broker, so it runs before anything that can fail on market or order data.
+        ks = kill_switch_from_state(state)
+        if state.get("last_kill_check") != today.date().isoformat():
+            ks.update(equity, False)  # the trend flag only matters for automatic re-arm, which is off
+            state["kill"], state["last_kill_check"] = kill_switch_to_state(ks), today.date().isoformat()
+            save_state(state)  # now: a killed process skips `finally`, and the later downloads can hang
+        if ks.killed:
+            log_event("alert", message=f"KILL SWITCH active: equity {equity:,.0f}, peak {ks.peak:,.0f}, limit "
+                      f"{LIMITS.kill_drawdown:.0%}. Manual review + --reset-kill-switch required.")
+            if positions:
+                submit_all(broker, liquidation_orders(positions, tag), submit)
+
         log_order_updates(broker, state, today)
 
         stocks, eligible = load_universe("pit", refresh=True)
@@ -186,23 +211,17 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
         if (today - last_bar).days > MAX_DATA_AGE_DAYS:
             log_event("alert", message=f"stale data: last bar {last_bar.date()}; aborting")
             return
+        if len(bench) < LIMITS.trend_window or bench.index[-1] != last_bar:
+            ends = bench.index[-1].date() if len(bench) else None
+            log_event("alert", message=f"unusable {BENCHMARK} history: {len(bench)} rows ending {ends}, need "
+                      f"{LIMITS.trend_window} ending {last_bar.date()}; aborting")
+            return
         trend = trend_ok(bench, LIMITS.trend_window)
-        equity = broker.last_close_equity()
-        positions = broker.positions()
         log_event("account", last_close_equity=equity, positions=positions, last_bar=last_bar.date(),
                   benchmark_above_trend=bool(trend.iloc[-1]))
 
-        ks = kill_switch_from_state(state)
-        if state.get("last_kill_check") != today.date().isoformat():
-            event = ks.update(equity, bool(trend.iloc[-1]))
-            state["kill"], state["last_kill_check"] = kill_switch_to_state(ks), today.date().isoformat()
-            if event == "kill":
-                log_event("alert", message=f"KILL SWITCH: equity {equity:,.0f} is {LIMITS.kill_drawdown:.0%} below "
-                          f"peak {ks.peak:,.0f}. Liquidating; manual review + --reset-kill-switch required.")
         if ks.killed:
-            if positions:
-                submit_all(broker, liquidation_orders(positions, tag), submit)
-            else:
+            if not positions:
                 log_event("killed", message="kill switch active, holding cash until manual reset")
             return
 

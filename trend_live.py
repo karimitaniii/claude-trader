@@ -93,32 +93,41 @@ def run(broker: Broker, submit: bool, now: datetime | None = None) -> None:
     log_event("run_start", strategy="qqq_trend", mode="submit" if submit else "dry_run",
               broker=type(broker).__name__, limits=asdict(LIMITS))
     try:
-        live.log_order_updates(broker, state, today)
-        bench = live.completed_bars(load_prices([BENCHMARK], refresh=True)[BENCHMARK].ffill(), today)
-        last_bar = bench.index[-1]
-        if (today - last_bar).days > live.MAX_DATA_AGE_DAYS:
-            log_event("alert", message=f"stale data: last bar {last_bar.date()}; aborting")
-            return
-        want_on = want_invested(bench)
         equity, positions = broker.last_close_equity(), broker.positions()
-        log_event("account", last_close_equity=equity, positions=positions, last_bar=last_bar.date(),
-                  benchmark_above_trend=want_on)
         stray = sorted(s for s in positions if s != BENCHMARK)
         if stray:
             log_event("alert", message=f"unexpected positions in the trend account: {stray}; is it the wrong account?")
             return
 
+        # The kill switch needs only the broker, so it runs before anything that can fail on market or order data.
         ks = kill_switch_from_state(state)
         if state.get("last_kill_check") != today.date().isoformat():
-            event = ks.update(equity, want_on)
+            ks.update(equity, False)  # the trend flag only matters for automatic re-arm, which is off
             state["kill"], state["last_kill_check"] = kill_switch_to_state(ks), today.date().isoformat()
-            if event == "kill":
-                log_event("alert", message=f"KILL SWITCH: equity {equity:,.0f} is {LIMITS.kill_drawdown:.0%} below "
-                          f"peak {ks.peak:,.0f}. Liquidating; manual review + --reset-kill-switch required.")
+            save_state(state)  # now: a killed process skips `finally`, and the later downloads can hang
         if ks.killed:
+            log_event("alert", message=f"KILL SWITCH active: equity {equity:,.0f}, peak {ks.peak:,.0f}, limit "
+                      f"{LIMITS.kill_drawdown:.0%}. Manual review + --reset-kill-switch required.")
             if positions:
                 live.submit_all(broker, live.liquidation_orders(positions, tag), submit)
-            else:
+
+        live.log_order_updates(broker, state, today)
+
+        bench = live.completed_bars(load_prices([BENCHMARK], refresh=True)[BENCHMARK].ffill(), today)
+        if len(bench) < LIMITS.trend_window:
+            log_event("alert", message=f"unusable {BENCHMARK} history: {len(bench)} rows, need "
+                      f"{LIMITS.trend_window}; aborting")
+            return
+        last_bar = bench.index[-1]
+        if (today - last_bar).days > live.MAX_DATA_AGE_DAYS:
+            log_event("alert", message=f"stale data: last bar {last_bar.date()}; aborting")
+            return
+        want_on = want_invested(bench)
+        log_event("account", last_close_equity=equity, positions=positions, last_bar=last_bar.date(),
+                  benchmark_above_trend=want_on)
+
+        if ks.killed:
+            if not positions:
                 log_event("killed", message="kill switch active, holding cash until manual reset")
             return
 
