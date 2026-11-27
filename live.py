@@ -107,10 +107,11 @@ def save_state(state: dict) -> None:
     os.replace(tmp, STATE_FILE)  # atomic: an interrupted save leaves the previous state, never half a file
 
 
-def log_event(kind: str, required: bool = False, **data) -> None:
-    """Append to the day's log and print. A failed write is only reported, unless `required`."""
+def log_event(kind: str, required: bool = False, **data) -> bool:
+    """Append to the day's log and print; True if written. A failed write is only reported, unless `required`."""
     now = datetime.now(timezone.utc)
     rec = {"ts": now.isoformat(timespec="seconds"), "kind": kind, **data}
+    written = True
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         with open(LOG_DIR / f"{now.astimezone(ET).date()}.jsonl", "a") as f:
@@ -118,9 +119,11 @@ def log_event(kind: str, required: bool = False, **data) -> None:
     except OSError as e:
         if required:
             raise
+        written = False
         print(f"[alert] could not write the log: {e!r}", file=sys.stderr)
     line = f"[{kind}] " + ", ".join(f"{k}={v}" for k, v in data.items() if k not in ("targets", "orders"))
     print(line, file=sys.stderr if kind in ("alert", "error") else sys.stdout)
+    return written
 
 
 def kill_switch_from_state(state: dict) -> KillSwitch:
@@ -142,10 +145,11 @@ def log_order_updates(broker: Broker, state: dict, today: pd.Timestamp) -> None:
     for o in broker.orders_since(since):
         cid = o.get("client_order_id") or ""
         if cid.startswith(ORDER_PREFIX + "-") and o["status"] in final and cid not in state["logged_orders"]:
-            log_event("fill" if o["status"] == "filled" else "order_final", **o)
+            written = log_event("fill" if o["status"] == "filled" else "order_final", **o)
             if o["status"] != "filled":
                 log_event("alert", message=f"order {cid} ended {o['status']}", filled_qty=o["filled_qty"])
-            state["logged_orders"].append(cid)
+            if written:  # otherwise a later run logs it again (compare.py reads fills from the log)
+                state["logged_orders"].append(cid)
     state["logged_orders"] = state["logged_orders"][-1000:]
 
 

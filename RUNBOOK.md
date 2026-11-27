@@ -148,7 +148,8 @@ kinds are also printed to the terminal (stderr).
   while positions you expected to be sold remain, sell them by hand in the dashboard.
 - **`could not write the log: ...`** (terminal only): the log folder cannot be written. A new rebalance or trend
   order is refused, but a kill-switch liquidation still goes ahead, so copy the terminal output: it may be the only
-  record. Fix the disk, check the dashboard, and do not `--submit` again that day if any order was sent.
+  record. Fix the disk, check the dashboard, and do not `--submit` again that day if any order was sent. A fill or
+  unfilled-order event that could not be written is logged by a later run, within the 7-day lookback.
 - **`order failed: <client_order_id>`**: an order was rejected at submit time. The run keeps going for the other
   orders. Read the `error` line next to it, then see "Failed or unfilled orders".
 - **`order <id> ended <status>`**: an order was not filled (for example `rejected`). See "Failed or unfilled orders".

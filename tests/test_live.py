@@ -438,3 +438,18 @@ def test_benchmark_missing_the_signal_day_aborts(monkeypatch):
     b = PaperSimBroker()
     live.run(b, submit=True, now=NOON)
     assert b.submitted == [] and any("signal day" in m for m in alerts())
+
+
+@pytest.mark.parametrize("status, kind", [("filled", "fill"), ("rejected", "order_final")])
+def test_order_event_is_retried_until_it_is_written(monkeypatch, tmp_path, status, kind):
+    fake_market(monkeypatch)
+    good = live.LOG_DIR
+    b = PaperSimBroker()
+    b.orders_since = lambda since: [{"client_order_id": "tm-x", "status": status, "filled_qty": 1}]
+    unwritable_logs(monkeypatch, tmp_path)
+    live.run(b, submit=False, now=NOON)
+    assert json.loads(live.STATE_FILE.read_text())["logged_orders"] == []
+    monkeypatch.setattr(live, "LOG_DIR", good)
+    live.run(b, submit=False, now=NOON)
+    live.run(b, submit=False, now=NOON)
+    assert sum(e["kind"] == kind for e in events(good)) == 1
