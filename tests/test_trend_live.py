@@ -276,3 +276,16 @@ def test_no_entry_without_a_writable_log(monkeypatch, tmp_path):
     with pytest.raises(OSError):
         trend_live.run(b, submit=True, now=WHEN)
     assert b.submitted == []
+
+
+def test_order_event_is_retried_until_it_is_written(monkeypatch, tmp_path):
+    fake_bench(monkeypatch)
+    good = trend_live.LOG_DIR
+    b = PaperSimBroker()
+    b.orders_since = lambda since: [{"client_order_id": "tm-x", "status": "filled", "filled_qty": 1}]
+    unwritable_logs(monkeypatch, tmp_path)
+    trend_live.run(b, submit=False, now=WHEN)
+    monkeypatch.setattr(trend_live, "LOG_DIR", good)
+    trend_live.run(b, submit=False, now=WHEN)
+    trend_live.run(b, submit=False, now=WHEN)
+    assert sum(e["kind"] == "fill" for e in events()) == 1

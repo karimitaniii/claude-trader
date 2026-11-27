@@ -147,7 +147,7 @@ def log_order_updates(broker: Broker, state: dict, today: pd.Timestamp) -> None:
         if cid.startswith(ORDER_PREFIX + "-") and o["status"] in final and cid not in state["logged_orders"]:
             written = log_event("fill" if o["status"] == "filled" else "order_final", **o)
             if o["status"] != "filled":
-                log_event("alert", message=f"order {cid} ended {o['status']}", filled_qty=o["filled_qty"])
+                written &= log_event("alert", message=f"order {cid} ended {o['status']}", filled_qty=o["filled_qty"])
             if written:  # otherwise a later run logs it again (compare.py reads fills from the log)
                 state["logged_orders"].append(cid)
     state["logged_orders"] = state["logged_orders"][-1000:]

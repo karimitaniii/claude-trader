@@ -453,3 +453,17 @@ def test_order_event_is_retried_until_it_is_written(monkeypatch, tmp_path, statu
     live.run(b, submit=False, now=NOON)
     live.run(b, submit=False, now=NOON)
     assert sum(e["kind"] == kind for e in events(good)) == 1
+
+
+def test_order_is_retried_if_only_its_alert_was_not_written(monkeypatch):
+    fake_market(monkeypatch)
+    b = PaperSimBroker()
+    b.orders_since = lambda since: [{"client_order_id": "tm-x", "status": "rejected", "filled_qty": 0}]
+    write = live.log_event
+    monkeypatch.setattr(live, "log_event", lambda kind, **data: False if kind == "alert" else write(kind, **data))
+    live.run(b, submit=False, now=NOON)
+    assert json.loads(live.STATE_FILE.read_text())["logged_orders"] == []
+    monkeypatch.setattr(live, "log_event", write)
+    live.run(b, submit=False, now=NOON)
+    assert sum("ended rejected" in m for m in alerts()) == 1
+    assert json.loads(live.STATE_FILE.read_text())["logged_orders"] == ["tm-x"]
